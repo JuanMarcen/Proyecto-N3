@@ -71,3 +71,31 @@ df_minutes <- df_minutes %>%
 
 save(estaciones, df_minutes,
      file = 'data.RData')
+
+# hourly data frame (sum those in the same hour)
+cols_id <- c('t', 'l' ,'mes' , 'dia.mes', 'h')
+cols_val <- paste0(estaciones, '.p')
+
+df_hours <- df_minutes %>%
+  group_by(across(all_of(cols_id))) %>%
+  summarise(
+    across(all_of(cols_val), ~sum(.x, na.rm = FALSE)),
+    .groups = 'drop'
+  )
+
+save(estaciones, df_minutes, df_hours,
+     file = 'data.RData')
+
+#daily data frame (sum those in the same day)
+# na.rm = TRUE (at the moment)
+cols_id <- c('t', 'l' ,'mes' , 'dia.mes')
+
+df_days <- df_hours %>%
+  group_by(across(all_of(cols_id))) %>%
+  summarise(
+    across(all_of(cols_val), ~sum(.x, na.rm = TRUE)),
+    .groups = 'drop'
+  )
+
+save(estaciones, df_minutes, df_hours, df_days,
+     file = 'data.RData')
