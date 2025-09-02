@@ -68,3 +68,6 @@ for(i in 2: length(estaciones)){
 
 df_minutes <- df_minutes %>%
   arrange(t, mes, dia.mes, h, min)
+
+save(estaciones, df_minutes,
+     file = 'data.RData')
