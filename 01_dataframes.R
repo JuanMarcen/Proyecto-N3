@@ -57,6 +57,14 @@ for (i in estaciones){
   
 }
 
+# final data frame of minutes
+df_minutes <- get(paste0('df.', estaciones[1]))
 
+for(i in 2: length(estaciones)){
+  df_minutes <- full_join(df_minutes, 
+                      get(paste0('df.', estaciones[i])),
+                      by = c('t', 'l', 'mes', 'dia.mes', 'h', 'min'))
+}
 
-
+df_minutes <- df_minutes %>%
+  arrange(t, mes, dia.mes, h, min)
