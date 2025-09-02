@@ -67,7 +67,8 @@ for(i in 2: length(estaciones)){
 }
 
 df_minutes <- df_minutes %>%
-  arrange(t, mes, dia.mes, h, min)
+  arrange(t, mes, dia.mes, h, min) %>% 
+  as.data.frame()
 
 save(estaciones, df_minutes,
      file = 'data.RData')
@@ -81,7 +82,8 @@ df_hours <- df_minutes %>%
   summarise(
     across(all_of(cols_val), ~sum(.x, na.rm = FALSE)),
     .groups = 'drop'
-  )
+  ) %>%
+  as.data.frame()
 
 save(estaciones, df_minutes, df_hours,
      file = 'data.RData')
@@ -95,7 +97,8 @@ df_days <- df_hours %>%
   summarise(
     across(all_of(cols_val), ~sum(.x, na.rm = TRUE)),
     .groups = 'drop'
-  )
+  ) %>%
+  as.data.frame()
 
 save(estaciones, df_minutes, df_hours, df_days,
      file = 'data.RData')
