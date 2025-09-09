@@ -1,0 +1,47 @@
+---
+title: "02_MHO"
+output: html_document
+date: "2025-09-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r cars, include = FALSE, warning = FALSE}
+library(pROC)
+
+load('data_rmd.RData')
+
+for (station in estaciones){
+  mho <- get(paste0('mho.', station))
+  X <- get(paste0('X.', station))
+  
+  summary(mho)
+  
+  boxplot(mho$fitted.values ~ X$Y,
+          xlab = 'Y real',
+          ylab = 'P(Y = 1| X)',
+          main = station)
+  
+  pred <- predict(mho, type = 'response')
+  roc <- roc(X$Y, pred)
+  plot(roc, col="blue", main = paste('Curva ROC', station), 
+       print.thres = T,
+       print.auc = T)
+    
+  thres <- coords(roc, 'best')[1]
+  
+  pred_class <- ifelse(pred > thres, 1, 0)
+  table <- table(Predicho = cut(pred,c(0,thres,1)), Real = X$Y)
+  
+  print(table)
+  
+  print(round(100*prop.table(table, 2)), 2)
+  
+  rm(list = c('X', 'mho', 'pred', 'rho', 'station', 'thres', 'pred_class', 'table'))
+}
+
+```
+
+

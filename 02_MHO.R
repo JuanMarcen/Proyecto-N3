@@ -80,7 +80,7 @@ for (station in estaciones){
   rm(list = c('X', 'X_final', 'mho', 'formula', 'p_day', 'station.p', 'station'))
 }
 
-# evaluation
+# evaluation #put in a Rmarkdow
 library(pROC)
 
 for (station in estaciones){
@@ -112,6 +112,4 @@ for (station in estaciones){
   rm(list = c('X', 'mho', 'pred', 'rho', 'station', 'thres', 'pred_class', 'table'))
 }
 
-roc$thresholds
-coords(roc, 'best')[1]
 
