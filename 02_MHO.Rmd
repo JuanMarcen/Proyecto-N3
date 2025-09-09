@@ -8,7 +8,7 @@ date: "2025-09-09"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r cars, include = FALSE, warning = FALSE}
+```{r cars, include = TRUE, warning = FALSE}
 library(pROC)
 
 load('data_rmd.RData')
@@ -43,5 +43,3 @@ for (station in estaciones){
 }
 
 ```
-
-
