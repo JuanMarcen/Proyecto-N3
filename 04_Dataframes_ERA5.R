@@ -4,7 +4,7 @@
 rm(list = ls())
 
 # Read stations information
-stations <- read.csv("Data/ECAD/stations.csv")
+stations <- readRDS("stations.rds")
 stations$Grid <- paste0(round(stations$LAT),"N.",abs(round(stations$LON)),ifelse(stations$LON>-0.5,"E","W"))
 
 # Target grid points
@@ -13,35 +13,33 @@ cpoints <- c("45N.10W","45N.5E","35N.10W","35N.5E")
 # Near-station points
 tpoints <- c(cpoints,unique(stations$Grid))
 # Reference period
-ref_period <- c("1981-06-01","2010-08-31")
+ref_period <- c("1997-01-01","2023-12-31")
 
 # Read grid data
-era5 <- cbind(read.csv("Data/ERA5/g500_grid.csv"),
-              read.csv("Data/ERA5/g700_grid.csv"))
+era5 <- cbind(readRDS("g300.rds"), readRDS('g500.rds'), readRDS('g700.rds'))
 # Convert ERA5 geopotentials into geopotential height
+era5 <- era5[-which(format(era5$Date, '%m-%d') == '02-29'), ]
 era5_vars <- grep("g",names(era5))
 era5[,era5_vars] <- era5[,era5_vars]/9.80665
 names(era5)[era5_vars] <- paste0("z",names(era5)[era5_vars])
 
 # Reshape data
-era5$date <- as.Date(era5$date)
-TT <- length(table(format(era5$date,"%Y")))
+era5$Date <- as.Date(era5$Date)
+TT <- length(table(format(era5$Date,"%Y")))
 LL <- nrow(era5)/TT
 SS <- nrow(stations)
 
 # Init global data.frame
 gdf <- data.frame(STAID = rep(stations$STAID, each = nrow(era5)),
-                  date = rep(era5$date, SS),
+                  date = rep(era5$Date, SS),
                   t = rep(rep(1:TT, each = LL), SS),
                   l = rep(rep(1:LL, TT), SS),
                   LAT = rep(stations$LAT, each = nrow(era5)),
                   LON = rep(stations$LON, each = nrow(era5)),
-                  grid = rep(stations$Grid, each = nrow(era5)),
-                  Altitude = rep(stations$HGHT, each = nrow(era5)),
-                  CoastDist = rep(stations$CoastDist, each = nrow(era5)))
+                  grid = rep(stations$Grid, each = nrow(era5)))
 
 # Variable names
-eralevels <- paste0("zg",c("500","700"))
+eralevels <- paste0("zg",c("300", "500","700"))
 # Corner points
 cpoints <- c("45N.10W","45N.5E","35N.10W","35N.5E")
 # Define variable names
@@ -80,4 +78,4 @@ gdf <- cbind(gdf,gmat)
 
 # Write data.frame
 saveRDS(object = gdf,
-        file = "Data/ERA5/global_df.rds")
+        file = "global_df.rds")
