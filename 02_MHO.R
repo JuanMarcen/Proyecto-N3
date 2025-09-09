@@ -4,9 +4,6 @@ rm(list = ls())
 
 load('data.RData')
 
-# creation of design matrix (covariates)
-# example for 1 station
-station <- 'EM71.p'
 
 # harmonics
 cs <- function(t,harmonics=1) {
@@ -39,39 +36,82 @@ df_hours <- df_hours %>%
   left_join(harm_l, by = 'l') %>%
   left_join(harm_h, by = 'h')
 
-# creation of final X matrix
-X_example <- df_hours[, c('t', 'l', 'mes', 'dia.mes', 'h', station,
-                           colnames(harm_l)[2:ncol(harm_l)],
-                           colnames(harm_h)[2:ncol(harm_h)])]
+# creation of final X matrix -- Generalize
+# for all stations
+# Saving design matrix (X) and model 
+for (station in estaciones){
+  station.p <- paste0(station, '.p')
+  X <- df_hours[, c('t', 'l', 'mes', 'dia.mes', 'h', station.p,
+                            colnames(harm_l)[2:ncol(harm_l)],
+                            colnames(harm_h)[2:ncol(harm_h)])]
+  
+  # whole day
+  p_day <- df_days[,  c('t', 'l', 'mes', 'dia.mes', station.p)]
+  colnames(p_day)[colnames(p_day) == station.p] <- paste0(station.p, '.day')
+  
+  X <- X %>%
+    left_join(p_day, by = c('t', 'l', 'mes', 'dia.mes'))
+  
+  # lags
+  X <- X %>% 
+    mutate(!!paste0(station.p, '.lag') := lag(.data[[station.p]]))
+  
+  #eliminate days with no rain
+  X_final <- X[-which(X[[paste0(station.p,'.day')]] == 0), ]
+  
+  # hourly indicator of rain
+  X_final <- X_final %>%
+    mutate(Y = ifelse(.data[[station.p]] > 0, 1, 0)) %>% 
+    relocate(Y, .after = !!station.p) %>%
+    as.data.frame() %>% na.omit()
+  
+  #na omit necesario?
+  
+  # MHO
+  formula <- as.formula(
+    paste('Y ~', paste(colnames(X_final)[8:ncol(X_final)], collapse = '+'))
+  )
+  
+  mho <- glm(formula = formula, family = binomial(logit), data = X_final)
+  
+  assign(paste0('X.', station), X_final)
+  assign(paste0('mho.', station), mho)
+  
+  rm(list = c('X', 'X_final', 'mho', 'formula', 'p_day', 'station.p', 'station'))
+}
 
-# whole day
-p_day <- df_days[,  c('t', 'l', 'mes', 'dia.mes', station)]
-colnames(p_day)[colnames(p_day) == station] <- paste0(station, '.day')
+# evaluation
+library(pROC)
 
-X_example <- X_example %>%
-  left_join(p_day, by = c('t', 'l', 'mes', 'dia.mes'))
+for (station in estaciones){
+  mho <- get(paste0('mho.', station))
+  X <- get(paste0('X.', station))
+  
+  summary(mho)
+  
+  boxplot(mho$fitted.values ~ X$Y,
+          xlab = 'Y real',
+          ylab = 'P(Y = 1| X)',
+          main = station)
+  
+  pred <- predict(mho, type = 'response')
+  roc <- roc(X$Y, pred)
+  plot(roc, col="blue", main = paste('Curva ROC', station), 
+       print.thres = T,
+       print.auc = T)
+    
+  thres <- coords(roc, 'best')[1]
+  
+  pred_class <- ifelse(pred > thres, 1, 0)
+  table <- table(Predicho = cut(pred,c(0,thres,1)), Real = X$Y)
+  
+  print(table)
+  
+  print(round(100*prop.table(table, 2)), 2)
+  
+  rm(list = c('X', 'mho', 'pred', 'rho', 'station', 'thres', 'pred_class', 'table'))
+}
 
-# lags
-X_example <- X_example %>% 
-  mutate(!!paste0(station, '.lag') := lag(.data[[station]]))
+roc$thresholds
+coords(roc, 'best')[1]
 
-colnames(X_example)
-
-#eliminate days with no rain
-X_final <- X_example[-which(X_example$EM71.p.day == 0), ]
-
-# hourly indicator of rain
-X_final <- X_final %>%
-  mutate(Y = ifelse(.data[[station]] > 0, 1, 0)) %>% 
-  relocate(Y, .after = !!station) %>%
-  as.data.frame() %>% na.omit()
-
-# MHO
-formula <- as.formula(
-  paste('Y ~', paste(colnames(X_final)[8:ncol(X_final)], collapse = '+'))
-)
-
-mho_example <- glm(formula = formula, family = binomial, data = X_final)
-summary(mho_example)
-
-boxplot(mho_example$fitted.values ~ X_final$Y)
