@@ -23,14 +23,14 @@ for (i in 1:length(estaciones)){
   
   borrar <- read.csv(file, skip = 13, nrows = 2, header = FALSE, sep = ';')
   
-  lon <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[1, ])))
+  lon <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[1, 1])))
   
-  lat <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[2, ])))
+  lat <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[2, 1])))
   
   borrar <- read.csv(file, skip = 3, nrows = 2, header = FALSE, sep = ';')
   
-  X <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[1, ])))
-  Y <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[2, ])))
+  X <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[1, 1])))
+  Y <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[2, 1])))
     
   borrar <- read.csv(file, skip = 1, nrows = 1, header = FALSE, sep = ';')
   borrar[, 1] <- iconv(borrar[, 1], from = "latin1", to = "UTF-8") #accents
@@ -46,6 +46,11 @@ for (i in 1:length(estaciones)){
   rm(list = c('borrar', 'file', 'lat', 'lon', 'name', 'station', 'i', 'X', 'Y'))
   
 }
+
+stations$Z <- c(655, 855, 1394.5, 292, 761, 
+               779, 1412.8, 735,
+               1011, 1180, 1280, 1095,
+               872.4, 1173.4, 1008.2, 0)
 
 stations$color <- c(rep('blue', times = 5), rep('red', times = 3),
                     rep('forestgreen', times = 4), rep('red', times = 4))
