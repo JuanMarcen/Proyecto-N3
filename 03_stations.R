@@ -12,8 +12,8 @@ estaciones <- c('EM71', 'P084', 'P018', 'E085', 'R026',
                 'EM70', 'P021', 'P087', 'P088',
                 'A042', 'P023', 'P024', 'R036')
 
-stations <- data.frame(matrix(NA, nrow = 16, ncol = 4))
-colnames(stations) <- c('STAID', 'NAME', 'LAT', 'LON')
+stations <- data.frame(matrix(NA, nrow = 16, ncol = 7))
+colnames(stations) <- c('STAID', 'NAME', 'LAT', 'LON', 'X', 'Y', 'Z')
 stations$STAID <- estaciones
 
 for (i in 1:length(estaciones)){
@@ -27,6 +27,11 @@ for (i in 1:length(estaciones)){
   
   lat <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[2, ])))
   
+  borrar <- read.csv(file, skip = 3, nrows = 2, header = FALSE, sep = ';')
+  
+  X <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[1, ])))
+  Y <- as.numeric(gsub(',', '.', gsub('.*:\t', '', borrar[2, ])))
+    
   borrar <- read.csv(file, skip = 1, nrows = 1, header = FALSE, sep = ';')
   borrar[, 1] <- iconv(borrar[, 1], from = "latin1", to = "UTF-8") #accents
   
@@ -34,10 +39,29 @@ for (i in 1:length(estaciones)){
   
   stations[i, 'LAT'] <- lat
   stations[i, 'LON'] <- lon
+  stations[i, 'X'] <- X
+  stations[i, 'Y'] <- Y
   stations[i, 'NAME'] <- name
   
-  rm(list = c('borrar', 'file', 'lat', 'lon', 'name', 'station', 'i'))
+  rm(list = c('borrar', 'file', 'lat', 'lon', 'name', 'station', 'i', 'X', 'Y'))
   
 }
+
+stations$color <- c(rep('blue', times = 5), rep('red', times = 3),
+                    rep('forestgreen', times = 4), rep('red', times = 4))
+
+# añadido de Ateca
+stations <- rbind(
+  stations,
+  data.frame(
+    STAID = 'A126', 
+    NAME = 'ATECA', 
+    LAT = 41.322944, 
+    LON = -1.800639, 
+    X = 600374.3, 
+    Y = 4575302.1, 
+    Z = 600, 
+    color = 'black')
+)
 
 saveRDS(stations, 'stations.rds')
