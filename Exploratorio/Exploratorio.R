@@ -76,7 +76,7 @@ df.desc.mes <- function(station, data){
   
   # 2.4 máximo
   max <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0$mes, max, na.rm = T))
-  df$max <- round(max.geq.0[, 1], 3)
+  df$max <- round(max[, 1], 3)
   
   return(df)
 }
@@ -92,32 +92,60 @@ for (station in estaciones){
 
 # table writing for Word
 library(writexl)
-write_xlsx(df.h.desc.EM71, "borrar.xlsx")
+write_xlsx(df.h.desc.R036, "borrar.xlsx")
 
 # 3 Aproxximate distribution (all and per month) for non 0's
-df_no0 <- df_station %>%
-  filter(.data[[paste0(station, ".p")]] > 0)
-
-dens <- density(df_no0[, paste0(station, ".p")], 
-                from = min(df_no0[, paste0(station, ".p")]),
-                to   = max(df_no0[, paste0(station, ".p")]))
-plot(dens, lwd = 2, main = paste("Densidades de", station), xlab = "Valor")
-
-col_mes <- rainbow(12)
-for (i in 1:12){
-  ind <- which(df_no0$mes == i)
-  dens <- density(df_no0[ind, paste0(station, ".p")], 
-                  from = min(df_no0[ind, paste0(station, ".p")]),
-                  to   = max(df_no0[ind, paste0(station, ".p")]))
-  lines(dens, col = col_mes[i])
+dens.no.0 <- function(station, data){
   
+  df_station <- data[, c('t', 'l', 'mes', 'dia.mes', paste0(station, '.p'))]
+  
+  df_no0 <- df_station %>%
+    filter(.data[[paste0(station, ".p")]] > 0)
+  
+  dens <- density(df_no0[, paste0(station, ".p")], 
+                  from = 0,
+                  to   = max(df_no0[, paste0(station, ".p")]))
+  plot(dens, lwd = 2, main = paste("Densidades de", station), xlab = "Valor")
+  
+  col_mes <- rainbow(12)
+  for (i in 1:12){
+    ind <- which(df_no0$mes == i)
+    dens <- density(df_no0[ind, paste0(station, ".p")], 
+                    from = 0,
+                    to   = max(df_no0[ind, paste0(station, ".p")]))
+    lines(dens, col = col_mes[i])
+    
+  }
+  
+  legend("topright", legend = c("Total", paste("Mes", 1:12)),
+         col = c("black", col_mes), lwd = 2)
 }
 
-legend("topright", legend = c("Total", paste("Mes", 1:12)),
-       col = c("black", col_mes), lwd = 2)
+for (station in estaciones){
+  dens.no.0(station, df_hours)
+}                        
+                        
+# interesting graphs
 
-                        
-                        
+
+#----NA's analysis----
+# Absolute frequency of missing data per month and year 
+# wih red line at level 0.25 --> 25% missing data
+aux.ind <- df_minutes$t + (df_minutes$mes - 0.5)/12
+aux.x <- tapply(aux.ind, aux.ind, mean )
+
+par(mfrow = c(4,4))
+for (station in estaciones){
+  cont.na <- tapply(is.na(df_minutes[, paste0(station, '.p')]), aux.ind, sum)
+  total <- tapply(df_minutes[, paste0(station, '.p')], aux.ind, length)
+  aux.y <- cont.na / total 
+  
+  plot(aux.x, aux.y, pch = 19, 
+       xlab = 'Year', ylab = 'Freq. abs. NA', main = station)
+  abline(h = 0.25, col = 'red')
+}
+
+
 
 #----eventos extremos, para ver cuadno son las fechas --> dependencias espaciales----
 basura1 <- apply(df_hours[, paste0(estaciones, '.p')] > 0, 1, mean, na.rm = T)
