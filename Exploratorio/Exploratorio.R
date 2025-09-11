@@ -167,6 +167,65 @@ graph.col.df(estaciones, 'df.h.desc.', 'q0.99', 'Cuantil 0.99 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'max', 'Máximo mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'f.rel.0', 'Freq.rel.0 mensual', cols)
 
+graph.col.df(estaciones, 'df.min.desc.', 'media', 'Media mensual', cols)
+graph.col.df(estaciones, 'df.min.desc.', 'mediana', 'Mediana mensual', cols)
+graph.col.df(estaciones, 'df.min.desc.', 'q0.90', 'Cuantil 0.90 mensual', cols)
+graph.col.df(estaciones, 'df.min.desc.', 'q0.95', 'Cuantil 0.95 mensual', cols)
+graph.col.df(estaciones, 'df.min.desc.', 'q0.99', 'Cuantil 0.99 mensual', cols)
+graph.col.df(estaciones, 'df.min.desc.', 'max', 'Máximo mensual', cols)
+graph.col.df(estaciones, 'df.min.desc.', 'f.rel.0', 'Freq.rel.0 mensual', cols)
+
+# Possible clusterings
+station <- estaciones[1]
+df.f.rel.0 <- df.h.desc.EM71[, c(1,2)]
+colnames(df.f.rel.0)[2] <- paste0(colnames(df.f.rel.0)[2], '.', station)
+for (i in 2:length(estaciones)){
+  aux.df <- get(paste0('df.h.desc.', estaciones[i]))
+  df.f.rel.0 <- cbind(df.f.rel.0, aux.df[['f.rel.0']])
+  colnames(df.f.rel.0)[i+1] <- paste0('f.rel.0.', estaciones[i])
+}
+
+dist.f.rel.0<-dist(t(df.f.rel.0[, 2:ncol(df.f.rel.0)]), method = "euclidean")
+hc <- hclust(dist.f.rel.0, method = 'centroid')
+plot(hc)
+clust <- cutree(hc, k = 3)
+stations$grupo.f.rel.0 <- factor(c(clust, 0))
+
+# dibujar en mapa esto
+map_zone <- ggplot(hypsobath) +
+  geom_sf(aes(fill = val_inf), color = NA) +
+  coord_sf(xlim = st_coordinates(limits)[,1], 
+           ylim = st_coordinates(limits)[,2]) + 
+  scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
+                    breaks = levels(hypsobath$val_inf),
+                    guide = guide_legend(reverse = TRUE)) +
+  xlab("Longitud") + ylab("Latitud") +
+  geom_point(aes(x = X, y = Y, color = stations$grupo.f.rel.0), 
+             data = data.frame(st_coordinates(stations))) +
+  ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations$STAID, 
+                                color = stations$grupo.f.rel.0), 
+                            size = 3.5,
+                            position = 'identity', label.size = 0.025,
+                            max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                            data = data.frame(st_coordinates(stations)),
+                            seed = 23) +
+  scale_color_manual(values = c('0' = 'black', '1' = 'red', 
+                                '2' = 'blue', '3' = 'forestgreen'),
+                     name = 'Clusters') + 
+  ggtitle(label = 'Grupos según frecuancia relativa 0')
+
+map_zone
+
+# probatinas
+require(factoextra)
+fviz_dist(dist.f.rel.0, show_labels = TRUE)
+
+library(corrplot)
+corrplot(cor(df.f.rel.0[, c(2:ncol(df.f.rel.0))], method = 'pearson'),
+         method = 'shade',
+         order = 'hclust',
+         hclust.method = 'centroid')
+
 #----NA's analysis----
 # Absolute frequency of missing data per month and year 
 # wih red line at level 0.25 --> 25% missing data
