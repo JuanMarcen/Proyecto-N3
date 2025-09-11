@@ -126,7 +126,46 @@ for (station in estaciones){
 }                        
                         
 # interesting graphs
+# all together graphs of different columns of the previous
+# frequency of 0
+library(Polychrome)
+cols <- createPalette(16, c("#FF0000", "#0000FF", "#00FF00", "#FFFF00",
+                            '#FF00FF', '#FFA500', '#228B22', '#A020F0',
+                            '#ADD8E6', '#EE82EE'))
 
+
+graph.col.df <- function(stations, name.df, col, ylab, cols){
+  
+  dfs <- mget(paste0(name.df, estaciones), envir = .GlobalEnv)
+  valores <- unlist(lapply(dfs, function(x) x[[col]]))
+  min <- min(valores)
+  max <- max(valores)
+  
+  station <- stations[1]
+  aux.df <- get(paste0(name.df, station))
+  plot(aux.df$Mes, aux.df[[col]], type = 'b', pch = 19,
+       ylim = c(min, max),
+       xlab = 'Mes', ylab = ylab,
+       col = cols[1])
+  for (i in 2:length(stations)){
+    station <- stations[i]
+    aux.df <- get(paste0(name.df, station))
+    lines(aux.df$Mes, aux.df[[col]], type = 'b', pch = 19,
+          col = cols[i])
+  }
+  
+  legend("topleft", legend = stations,
+         col = cols, lwd = 2, ncol = 2)
+  
+}
+
+graph.col.df(estaciones, 'df.h.desc.', 'media', 'Media mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'mediana', 'Mediana mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'q0.90', 'Cuantil 0.90 mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'q0.95', 'Cuantil 0.95 mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'q0.99', 'Cuantil 0.99 mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'max', 'Máximo mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'f.rel.0', 'Freq.rel.0 mensual', cols)
 
 #----NA's analysis----
 # Absolute frequency of missing data per month and year 
