@@ -50,7 +50,7 @@ for (i in 1:length(estaciones)){
 stations$Z <- c(655, 855, 1394.5, 292, 761, 
                779, 1412.8, 735,
                1011, 1180, 1280, 1095,
-               872.4, 1173.4, 1008.2, 0)
+               872.4, 1173.4, 1008.2, 1229)
 
 stations$color <- c(rep('blue', times = 5), rep('red', times = 3),
                     rep('forestgreen', times = 4), rep('red', times = 4))
