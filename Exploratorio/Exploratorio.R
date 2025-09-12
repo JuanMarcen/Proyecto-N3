@@ -268,7 +268,7 @@ map_zone <- ggplot(hypsobath) +
   scale_color_manual(values = c('0' = 'black', '1' = 'red', 
                                 '2' = 'blue', '3' = 'forestgreen'),
                      name = 'Clusters') + 
-  ggtitle(label = 'Grupos según frecuancia relativa 0')
+  ggtitle(label = 'Grupos según frecuencia relativa 0')
 
 map_zone
 
