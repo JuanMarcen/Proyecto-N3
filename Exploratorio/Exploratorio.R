@@ -196,22 +196,58 @@ for (i in 1:length(estaciones)){
 }
 
 # Possible clusterings
-station <- estaciones[1]
-df.f.rel.0 <- df.h.desc.EM71[, c(1,2)]
-colnames(df.f.rel.0)[2] <- paste0(colnames(df.f.rel.0)[2], '.', station)
-for (i in 2:length(estaciones)){
-  aux.df <- get(paste0('df.h.desc.', estaciones[i]))
-  df.f.rel.0 <- cbind(df.f.rel.0, aux.df[['f.rel.0']])
-  colnames(df.f.rel.0)[i+1] <- paste0('f.rel.0.', estaciones[i])
+load('Mapas/data_mapas.RData')
+
+df.stations.col <- function(stations, name.df, col){
+  station <- stations[1]
+  df.aux <- get(paste0(name.df, station))
+  df.aux <- df.aux[, c('Mes', col)]
+  colnames(df.aux)[2] <- paste0(colnames(df.aux)[2], '.', station)
+  for (i in 2:length(stations)){
+    df.aux.2 <- get(paste0(name.df, stations[i]))
+    df.aux <- cbind(df.aux, df.aux.2[[col]])
+    colnames(df.aux)[i+1] <- paste0(col, stations[i])
+  }
+  
+  return(df.aux)
 }
 
-dist.f.rel.0<-dist(t(df.f.rel.0[, 2:ncol(df.f.rel.0)]), method = "euclidean")
-hc <- hclust(dist.f.rel.0, method = 'centroid')
-plot(hc)
-clust <- cutree(hc, k = 3)
-stations$grupo.f.rel.0 <- factor(c(clust, 0))
+df.f.rel.0 <- df.stations.col(estaciones, 'df.h.desc.', 'f.rel.0')
+df.media <- df.stations.col(estaciones, 'df.h.desc.', 'media')
+df.mediana <- df.stations.col(estaciones, 'df.h.desc.', 'mediana')
+df.q0.90 <- df.stations.col(estaciones, 'df.h.desc.', 'q0.90')
+df.q0.95 <- df.stations.col(estaciones, 'df.h.desc.', 'q0.95')
+df.q0.99 <- df.stations.col(estaciones, 'df.h.desc.', 'q0.99')
+df.max <- df.stations.col(estaciones, 'df.h.desc.', 'max')
+
+dendogram <- function(df, method.dist, method.clust){
+  
+  dist.aux <- dist(t(df[, 2:ncol(df)]), method = method.dist)
+  hc <- hclust(dist.aux, method = method.clust)
+  plot(hc)
+  
+  return(hc)
+}
+
+hc.f.rel.0 <- dendogram(df.f.rel.0, 'euclidean', 'single')
+clust.f.rel.0 <- cutree(hc.f.rel.0, k = 2)
+hc.media <- dendogram(df.media, 'euclidean', 'single')
+clust.media <- cutree(hc.media, k = 2)
+hc.mediana <- dendogram(df.mediana, 'euclidean', 'single')
+clust.mediana <- cutree(hc.mediana, k = 2)
+hc.q0.90 <- dendogram(df.q0.90, 'euclidean', 'single')
+clust.q0.90 <- cutree(hc.q0.90, k = 2)
+hc.q0.95 <- dendogram(df.q0.95, 'euclidean', 'single')
+clust.q0.95 <- cutree(hc.q0.95, k = 2)
+hc.q0.99 <- dendogram(df.q0.99, 'euclidean', 'single')
+clust.q0.99 <- cutree(hc.q0.99, k = 2)
+hc.max <- dendogram(df.max, 'euclidean', 'single')
+clust.max <- cutree(hc.max, k = 2)
+
+stations$grupo.f.rel.0 <- factor(c(clust.f.rel.0, 0))
 
 # dibujar en mapa esto
+library(ggplot2)
 map_zone <- ggplot(hypsobath) +
   geom_sf(aes(fill = val_inf), color = NA) +
   coord_sf(xlim = st_coordinates(limits)[,1], 
@@ -235,6 +271,8 @@ map_zone <- ggplot(hypsobath) +
   ggtitle(label = 'Grupos según frecuancia relativa 0')
 
 map_zone
+
+
 
 # probatinas
 require(factoextra)

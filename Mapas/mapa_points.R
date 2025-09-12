@@ -74,6 +74,13 @@ hypsobath$val_inf[hypsobath$val_inf < 0] <- -1
 hypsobath$val_inf <- as.factor(hypsobath$val_inf)
 levels(hypsobath$val_inf)[1] <- "< 0"
 
+save(stations,
+     background,
+     limits,
+     hypsobath,
+     pal,
+     file = 'Mapas/data_mapas.RData')
+
 map_zone <- ggplot(hypsobath) +
   geom_sf(aes(fill = val_inf), color = NA) +
   coord_sf(xlim = st_coordinates(limits)[,1], 
