@@ -175,6 +175,26 @@ graph.col.df(estaciones, 'df.min.desc.', 'q0.99', 'Cuantil 0.99 mensual', cols)
 graph.col.df(estaciones, 'df.min.desc.', 'max', 'Máximo mensual', cols)
 graph.col.df(estaciones, 'df.min.desc.', 'f.rel.0', 'Freq.rel.0 mensual', cols)
 
+# comparision of maximum between hours and 15'
+par(mfrow = c(4,4))
+for (i in 1:length(estaciones)){
+  station <- estaciones[i]
+  df.h <- get(paste0('df.h.desc.', station))
+  df.min <- get(paste0('df.min.desc.', station))
+  
+  plot(df.h$Mes, df.h$max, type = 'b', pch = 19,
+       ylim = c(0, 60),
+       xlab = 'Mes', ylab = 'Máximo mensual', main = station,
+       col = cols[i])
+  lines(df.min$Mes, df.min$max, type = 'b', pch = 19)
+  
+  legend('topleft', legend = c('h', 'min'), 
+         col = c(cols[i], 'black'), lwd = 2, 
+         cex = 0.8,
+         pt.cex = 0.8,
+         pch = 19)
+}
+
 # Possible clusterings
 station <- estaciones[1]
 df.f.rel.0 <- df.h.desc.EM71[, c(1,2)]
