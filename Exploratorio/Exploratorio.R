@@ -78,6 +78,13 @@ df.desc.mes <- function(station, data){
   max <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0$mes, max, na.rm = T))
   df$max <- round(max[, 1], 3)
   
+  # r y lambda de una gamma 
+  var <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0$mes, var, na.rm = T))
+  df$var <- var[, 1]
+  
+  df$r <- media[, 1]^2 / var[, 1] 
+  df$lambda <- df$r / media[, 1]
+  
   return(df)
 }
 
@@ -154,7 +161,7 @@ graph.col.df <- function(stations, name.df, col, ylab, cols){
           col = cols[i])
   }
   
-  legend("topleft", legend = stations,
+  legend("top", legend = stations,
          col = cols, lwd = 2, ncol = 2)
   
 }
@@ -166,6 +173,7 @@ graph.col.df(estaciones, 'df.h.desc.', 'q0.95', 'Cuantil 0.95 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'q0.99', 'Cuantil 0.99 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'max', 'Máximo mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'f.rel.0', 'Freq.rel.0 mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'r', 'Parámetro de forma mensual', cols)
 
 graph.col.df(estaciones, 'df.min.desc.', 'media', 'Media mensual', cols)
 graph.col.df(estaciones, 'df.min.desc.', 'mediana', 'Mediana mensual', cols)
@@ -229,50 +237,66 @@ dendogram <- function(df, method.dist, method.clust){
   return(hc)
 }
 
-hc.f.rel.0 <- dendogram(df.f.rel.0, 'euclidean', 'single')
+hc.f.rel.0 <- dendogram(df.f.rel.0, 'euclidean', 'ward.D2')
 clust.f.rel.0 <- cutree(hc.f.rel.0, k = 2)
-hc.media <- dendogram(df.media, 'euclidean', 'single')
+hc.media <- dendogram(df.media, 'euclidean', 'ward.D2')
 clust.media <- cutree(hc.media, k = 2)
-hc.mediana <- dendogram(df.mediana, 'euclidean', 'single')
-clust.mediana <- cutree(hc.mediana, k = 2)
-hc.q0.90 <- dendogram(df.q0.90, 'euclidean', 'single')
+hc.mediana <- dendogram(df.mediana, 'euclidean', 'ward.D2')
+clust.mediana <- cutree(hc.mediana, k = 3)
+hc.q0.90 <- dendogram(df.q0.90, 'euclidean', 'ward.D2')
 clust.q0.90 <- cutree(hc.q0.90, k = 2)
-hc.q0.95 <- dendogram(df.q0.95, 'euclidean', 'single')
-clust.q0.95 <- cutree(hc.q0.95, k = 2)
-hc.q0.99 <- dendogram(df.q0.99, 'euclidean', 'single')
+hc.q0.95 <- dendogram(df.q0.95, 'euclidean', 'ward.D2')
+clust.q0.95 <- cutree(hc.q0.95, k = 3)
+hc.q0.99 <- dendogram(df.q0.99, 'euclidean', 'ward.D2')
 clust.q0.99 <- cutree(hc.q0.99, k = 2)
-hc.max <- dendogram(df.max, 'euclidean', 'single')
+hc.max <- dendogram(df.max, 'euclidean', 'ward.D2')
 clust.max <- cutree(hc.max, k = 2)
 
 stations$grupo.f.rel.0 <- factor(c(clust.f.rel.0, 0))
+stations$grupo.media <- factor(c(clust.media, 0))
+stations$grupo.mediana <- factor(c(clust.mediana, 0))
+stations$grupo.q0.90 <- factor(c(clust.q0.90, 0))
+stations$grupo.q0.95 <- factor(c(clust.q0.95, 0))
+stations$grupo.q0.99 <- factor(c(clust.q0.99, 0))
+stations$grupo.max <- factor(c(clust.max, 0))
 
 # dibujar en mapa esto
 library(ggplot2)
-map_zone <- ggplot(hypsobath) +
-  geom_sf(aes(fill = val_inf), color = NA) +
-  coord_sf(xlim = st_coordinates(limits)[,1], 
-           ylim = st_coordinates(limits)[,2]) + 
-  scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
-                    breaks = levels(hypsobath$val_inf),
-                    guide = guide_legend(reverse = TRUE)) +
-  xlab("Longitud") + ylab("Latitud") +
-  geom_point(aes(x = X, y = Y, color = stations$grupo.f.rel.0), 
-             data = data.frame(st_coordinates(stations))) +
-  ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations$STAID, 
-                                color = stations$grupo.f.rel.0), 
-                            size = 3.5,
-                            position = 'identity', label.size = 0.025,
-                            max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
-                            data = data.frame(st_coordinates(stations)),
-                            seed = 23) +
-  scale_color_manual(values = c('0' = 'black', '1' = 'red', 
-                                '2' = 'blue', '3' = 'forestgreen'),
-                     name = 'Clusters') + 
-  ggtitle(label = 'Grupos según frecuencia relativa 0')
+library(sf)
+library(sp)
+map_hc <- function(col, title){
+  map_zone <- ggplot(hypsobath) +
+    geom_sf(aes(fill = val_inf), color = NA) +
+    coord_sf(xlim = st_coordinates(limits)[,1], 
+             ylim = st_coordinates(limits)[,2]) + 
+    scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
+                      breaks = levels(hypsobath$val_inf),
+                      guide = guide_legend(reverse = TRUE)) +
+    xlab("Longitud") + ylab("Latitud") +
+    geom_point(aes(x = X, y = Y, color = stations[[paste0('grupo.', col)]]), 
+               data = data.frame(st_coordinates(stations))) +
+    ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations$STAID, 
+                                  color = stations[[paste0('grupo.', col)]]), 
+                              size = 3.5,
+                              position = 'identity', label.size = 0.025,
+                              max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                              data = data.frame(st_coordinates(stations)),
+                              seed = 23) +
+    scale_color_manual(values = c('0' = 'black', '1' = 'red', 
+                                  '2' = 'blue', '3' = 'forestgreen'),
+                       name = 'Clusters') + 
+    ggtitle(label = paste('Grupos según', title))
+  
+  map_zone
+}
 
-map_zone
-
-
+map_hc('f.rel.0', 'frecuencia relativa 0')
+map_hc('media', 'media')
+map_hc('mediana', 'mediana')
+map_hc('q0.90', 'q0.90')
+map_hc('q0.95', 'q0.95')
+map_hc('q0.99', 'q0.99')
+map_hc('max', 'max')
 
 # probatinas
 require(factoextra)
@@ -312,3 +336,24 @@ hist(basura[basura > 0])
 basura3 <- apply(df_hours[, paste0(estaciones, '.p')], 1, max, na.rm = T)
 summary(basura3[basura3 > 0])
 hist(basura3[basura3 > 0])
+
+#----Análisis de coeficiente de variación (para glm gamma)----
+station <- estaciones[2]
+df_station <- df_hours[, c('t', 'l', 'mes', 'dia.mes', paste0(station, '.p'))]
+
+df_no0 <- df_station %>%
+  filter(.data[[paste0(station, ".p")]] > 0)
+
+dens <- density(df_no0[, paste0(station, ".p")], 
+                from = 0,
+                to   = max(df_no0[, paste0(station, ".p")]))
+plot(dens, lwd = 2, main = paste("Densidades de", station), xlab = "Valor")
+
+mu <- mean(df_no0[[paste0(station, '.p')]])
+var <- var(df_no0[[paste0(station, '.p')]])
+r <- mu^2 / var #shape
+lambda <- r / mu #rate
+
+x <- seq(0, 25, length.out = 500)
+y <- dgamma(x, shape = r, scale = 1 / lambda)
+lines(x, y, col = 'red', lwd = 2)

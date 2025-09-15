@@ -80,6 +80,15 @@ for (station in estaciones){
   rm(list = c('X', 'X_final', 'mho', 'formula', 'p_day', 'station.p', 'station'))
 }
 
+
+## extra
+basura <- update(mho.EM71, data = X.EM71, formula = .~. + poly(EM71.p.day, 3))
+basura <- update(mho.EM71, data = X.EM71, formula = .~. + 
+                   poly(EM71.p.day, 2) + poly(EM71.p.lag, 2))
+
+aux.marcador <- is.element(X.EM71$mes, c(6,7,8))
+plot(gam(formula = as.formula('Y ~ s(EM71.p.day)'), data = X.EM71[aux.marcador, ]))
+
 # evaluation #put in a Rmarkdow
 library(pROC)
 
