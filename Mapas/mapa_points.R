@@ -81,8 +81,13 @@ save(stations,
      pal,
      file = 'Mapas/data_mapas.RData')
 
+rios <- st_read("Mapas/rios/Red_hidrografica.shp")
+rios <- st_transform(rios, 2062)
+rios_crop <- st_intersection(rios, st_as_sfc(st_bbox(limits)))
+
 map_zone <- ggplot(hypsobath) +
   geom_sf(aes(fill = val_inf), color = NA) +
+  geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
   coord_sf(xlim = st_coordinates(limits)[,1], 
            ylim = st_coordinates(limits)[,2]) + 
   scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
@@ -97,10 +102,15 @@ map_zone <- ggplot(hypsobath) +
                             data = data.frame(st_coordinates(stations)),
                             seed = 23) +
   scale_color_identity() + 
-  ggtitle(label = 'Ateca y alrededores')
-
+  ggtitle(label = 'Ateca y alrededores') 
+  
 map_zone
 
+
+map_zone_con_rios <- map_zone +
+  geom_sf(data = rios, color = "blue", size = 0.5)  # color azul para ríos
+
+map_zone_con_rios
 # mapa España con puntos (más adelante)
 # cleaning of workspace
 rm(list = setdiff(ls(), c("background", "limits", "stations")))
