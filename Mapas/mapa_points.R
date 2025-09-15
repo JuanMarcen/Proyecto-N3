@@ -74,16 +74,16 @@ hypsobath$val_inf[hypsobath$val_inf < 0] <- -1
 hypsobath$val_inf <- as.factor(hypsobath$val_inf)
 levels(hypsobath$val_inf)[1] <- "< 0"
 
+rios <- st_read("Mapas/rios/Red_hidrografica.shp")
+rios <- st_transform(rios, 2062)
+
 save(stations,
      background,
      limits,
      hypsobath,
      pal,
+     rios,
      file = 'Mapas/data_mapas.RData')
-
-rios <- st_read("Mapas/rios/Red_hidrografica.shp")
-rios <- st_transform(rios, 2062)
-rios_crop <- st_intersection(rios, st_as_sfc(st_bbox(limits)))
 
 map_zone <- ggplot(hypsobath) +
   geom_sf(aes(fill = val_inf), color = NA) +

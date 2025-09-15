@@ -35,7 +35,7 @@ dev.off()
 # I need info for each station
 
 # objective. 1 dataframe for each station
-df.desc.mes <- function(station, data){
+df.desc.mes <- function(station, data){ #añadir data de rachas para menor tiempo de computacion 
   
   #info per months (due to possible stationality)
   df <- as.data.frame(matrix(NA, ncol = 1, nrow = 12))
@@ -84,6 +84,9 @@ df.desc.mes <- function(station, data){
   
   df$r <- media[, 1]^2 / var[, 1] 
   df$lambda <- df$r / media[, 1]
+  
+  # RACHAS (3 h --> 3 columnas mas)
+  # RACHAS (6H --> 6 COLUMNAS MAS)
   
   return(df)
 }
@@ -267,6 +270,7 @@ library(sp)
 map_hc <- function(col, title){
   map_zone <- ggplot(hypsobath) +
     geom_sf(aes(fill = val_inf), color = NA) +
+    geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
     coord_sf(xlim = st_coordinates(limits)[,1], 
              ylim = st_coordinates(limits)[,2]) + 
     scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
@@ -337,23 +341,26 @@ basura3 <- apply(df_hours[, paste0(estaciones, '.p')], 1, max, na.rm = T)
 summary(basura3[basura3 > 0])
 hist(basura3[basura3 > 0])
 
-#----Análisis de coeficiente de variación (para glm gamma)----
-station <- estaciones[2]
-df_station <- df_hours[, c('t', 'l', 'mes', 'dia.mes', paste0(station, '.p'))]
+#----Rachas----
+# METER EN LA FUNCION DE SCAR DATOS 
+station <- estaciones[1]
 
-df_no0 <- df_station %>%
-  filter(.data[[paste0(station, ".p")]] > 0)
+valor <- df_hours$EM71.p
 
-dens <- density(df_no0[, paste0(station, ".p")], 
-                from = 0,
-                to   = max(df_no0[, paste0(station, ".p")]))
-plot(dens, lwd = 2, main = paste("Densidades de", station), xlab = "Valor")
+library(zoo)
+racha <- rollapply(valor, width = 3, FUN = sum, align = 'left')
 
-mu <- mean(df_no0[[paste0(station, '.p')]])
-var <- var(df_no0[[paste0(station, '.p')]])
-r <- mu^2 / var #shape
-lambda <- r / mu #rate
+aux <- df_hours
 
-x <- seq(0, 25, length.out = 500)
-y <- dgamma(x, shape = r, scale = 1 / lambda)
-lines(x, y, col = 'red', lwd = 2)
+aux <- aux %>%
+  mutate(
+    across(all_of(paste0(estaciones, ".p")), 
+           ~ rollapply(.x, width = 3, FUN = sum, align = "left", fill = NA),
+           .names = "racha3h_{.col}")
+  ) # align left, me dice que empieza en la hora actual y suma las dos siguientes
+
+aux.ind <- rep(c(1:3), times = dim(df_hours)[1]/3)
+aux$ind <- aux.ind
+
+aux.marcador <- is.element(aux$ind, 3)
+unique(aux[aux.marcador, 'h'])
