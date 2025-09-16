@@ -85,6 +85,8 @@ df.desc.mes <- function(station, data){ #añadir data de rachas para menor tiemp
   df$r <- media[, 1]^2 / var[, 1] 
   df$lambda <- df$r / media[, 1]
   
+  df$coef.var <- 1 / sqrt(df$r)
+  
   # RACHAS (3 h --> 3 columnas mas)
   # RACHAS (6H --> 6 COLUMNAS MAS)
   
@@ -164,7 +166,7 @@ graph.col.df <- function(stations, name.df, col, ylab, cols){
           col = cols[i])
   }
   
-  legend("top", legend = stations,
+  legend("topleft", legend = stations,
          col = cols, lwd = 2, ncol = 2)
   
 }
@@ -177,6 +179,7 @@ graph.col.df(estaciones, 'df.h.desc.', 'q0.99', 'Cuantil 0.99 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'max', 'Máximo mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'f.rel.0', 'Freq.rel.0 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'r', 'Parámetro de forma mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'coef.var', 'Coeficiente de variación mensual', cols)
 
 graph.col.df(estaciones, 'df.min.desc.', 'media', 'Media mensual', cols)
 graph.col.df(estaciones, 'df.min.desc.', 'mediana', 'Mediana mensual', cols)
