@@ -39,6 +39,8 @@ df_hours <- df_hours %>%
 # creation of final X matrix -- Generalize
 # for all stations
 # Saving design matrix (X) and model 
+mho_list <- list()
+X_list <- list()
 for (station in estaciones){
   station.p <- paste0(station, '.p')
   X <- df_hours[, c('t', 'l', 'mes', 'dia.mes', 'h', station.p,
@@ -68,26 +70,127 @@ for (station in estaciones){
   #na omit necesario?
   
   # MHO
+  X_list[[station]] <- X_final
   formula <- as.formula(
-    paste('Y ~', paste(colnames(X_final)[8:ncol(X_final)], collapse = '+'))
+    paste('Y ~', paste(colnames(X_list[[station]])[8:ncol(X_list[[station]])], collapse = '+'))
   )
   
-  mho <- glm(formula = formula, family = binomial(logit), data = X_final)
+  mho_list[[station]] <- glm(formula = formula, family = binomial(logit), data = X_list[[station]])
   
-  assign(paste0('X.', station), X_final)
-  assign(paste0('mho.', station), mho)
   
-  rm(list = c('X', 'X_final', 'mho', 'formula', 'p_day', 'station.p', 'station'))
+  # assign(paste0('X.', station), X_final)
+  # assign(paste0('mho.', station), mho)
+  
+  # rm(list = c('X', 'X_final', 'mho', 'formula', 'p_day', 'station.p', 'station'))
 }
 
+# estudio de covariables en los modelos
+## ejemplo para EM71
+# mod <- get(paste0('mho.', estaciones[1]))
+# X <- get(paste0('X.', estaciones[1]))
+mod <- mho_list[[estaciones[1]]]
+X <- X_list[[estaciones[1]]]
+mod_rebuilt <- glm(formula = formula(mod), family = binomial(link = "logit"), data = X)
+step(mod_rebuilt, direction = "backward")
 
-## extra
-basura <- update(mho.EM71, data = X.EM71, formula = .~. + poly(EM71.p.day, 3))
+# actualización de modelos
+basura <- update(mod, data = X, formula = .~. + poly(EM71.p.day, 3))
 basura <- update(mho.EM71, data = X.EM71, formula = .~. + 
                    poly(EM71.p.day, 2) + poly(EM71.p.lag, 2))
 
-aux.marcador <- is.element(X.EM71$mes, c(6,7,8))
-plot(gam(formula = as.formula('Y ~ s(EM71.p.day)'), data = X.EM71[aux.marcador, ]))
+library(gam)
+aux.marcador <- is.element(X$mes, c(6,7,8)) #meses de mayor lluvia al parecer
+plot(gam(formula = as.formula('Y ~ s(EM71.p.day)'), data = X[aux.marcador, ]))
+plot(gam(formula = as.formula('Y ~ s(EM71.p.lag)'), data = X[aux.marcador, ]))
+
+# selección variables (automático) según BIC
+mod_null <- glm(Y ~ 1, family = binomial(logit), data = X)
+harmonics.l <- list(
+  h1 = c('s.1.l', 'c.1.l'),
+  h2 = c('s.2.l', 'c.2.l'),
+  h3 = c('s.3.l', 'c.3.l'),
+  h4 = c('s.4.l', 'c.4.l')
+)
+harmonics.h <- list(
+  h1 = c('s.1.h', 'c.1.h'),
+  h2 = c('s.2.h', 'c.2.h'),
+  h3 = c('s.3.h', 'c.3.h'),
+  h4 = c('s.4.h', 'c.4.h')
+)
+
+step_rlog <- function(initial_model,
+                      data,
+                      vars,
+                      harmonics.l,
+                      harmonics.h){ 
+  # argumentos:
+  # initial_model: modelo inicial (modelo nulo)
+  # data: datos a utilizar (contiene explicada y explicativas)
+  # vars: covariables no armónicas que se desean introducir en el modelo (char)
+  # harmonics: lista de armónicos
+  
+  
+  
+  mod.aux <- initial_model
+  cat('Initial model ', deparse(formula(mod.aux)), '\n')
+  cat('BIC: ', BIC(mod.aux), '\n')
+  
+  if (!is.null(vars)) {
+    for (var in vars){
+      formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
+      mod.temp <- glm(formula.aux, data = data, family = binomial(link = "logit"))
+      
+      if (BIC(mod.temp) < BIC(mod.aux)){
+        cat('Added: ', var, '\n')
+        cat('BIC: ', BIC(mod.temp), '\n')
+        mod.aux <- mod.temp
+      }
+    }
+    
+  }
+  
+  
+  for (h in harmonics.l){
+    
+    formula.aux <- update(formula(mod.aux), paste(". ~ . +", paste(h, collapse = '+')))
+    
+    mod.temp <- glm(formula.aux, data = data, family = binomial(logit))
+    
+    if (BIC(mod.temp) < BIC(mod.aux)){
+      cat('Added: ',paste(h, collapse = '+'), '\n')
+      cat('BIC: ', BIC(mod.temp), '\n')
+      
+      mod.aux <- mod.temp
+    }else{
+      break
+    }
+  }
+  
+  for (h in harmonics.h){
+    
+    formula.aux <- update(formula(mod.aux), paste(". ~ . +", paste(h, collapse = '+')))
+    
+    mod.temp <- glm(formula.aux, data = data, family = binomial(logit))
+    
+    if (BIC(mod.temp) < BIC(mod.aux)){
+      cat('Added: ',paste(h, collapse = '+'), '\n')
+      cat('BIC: ', BIC(mod.temp), '\n')
+      
+      mod.aux <- mod.temp
+    }else{
+      break
+    }
+  }
+  
+  cat('\nFinal model: ', deparse(formula(mod.aux)), '\n')
+  cat('BIC: ', BIC(mod.aux), '\n')
+  
+  return(mod.aux)
+}
+
+basura <- step_rlog(mod_null, data = X, c('EM71.p.day', 'EM71.p.lag'), harmonics.l, harmonics.h)
+
+step(mod, direction = 'backward')
 
 # evaluation #put in a Rmarkdow
 library(pROC)
