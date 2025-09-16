@@ -241,7 +241,7 @@ for (station in estaciones){
   MHO[[station]][['X']] <- X_list[[station]]
 } 
 
-#----Estudio comunalidades----
+#----Estudio comunalidades (DIRIA QUE MEJOR PARA DIARIAS)----
 # stand by 
 
 #----evaluation #put in a Rmarkdow----
