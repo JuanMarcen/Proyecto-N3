@@ -70,3 +70,7 @@ stations <- rbind(
 )
 
 saveRDS(stations, 'stations.rds')
+
+stations.text <- stations[, c('STAID', 'NAME', 'X', 'Y', 'Z')]
+write.table(stations.text, "stations.txt", sep = "\t", row.names = FALSE)
+write.csv(stations.text, "stations.csv", row.names = FALSE)
