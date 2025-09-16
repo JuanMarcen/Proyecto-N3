@@ -88,23 +88,43 @@ for (station in estaciones){
 ## ejemplo para EM71
 # mod <- get(paste0('mho.', estaciones[1]))
 # X <- get(paste0('X.', estaciones[1]))
-mod <- mho_list[[estaciones[1]]]
-X <- X_list[[estaciones[1]]]
+mod <- mho_list[[estaciones[15]]]
+X <- X_list[[estaciones[15]]]
 mod_rebuilt <- glm(formula = formula(mod), family = binomial(link = "logit"), data = X)
 step(mod_rebuilt, direction = "backward")
 
-# actualización de modelos
-basura <- update(mod, data = X, formula = .~. + poly(EM71.p.day, 3))
+#----actualización de modelos----
+#borrador
+basura <- update(mod, data = X, formula = .~. + poly(P024.p.lag, 3))
 basura <- update(mho.EM71, data = X.EM71, formula = .~. + 
                    poly(EM71.p.day, 2) + poly(EM71.p.lag, 2))
 
 library(gam)
 aux.marcador <- is.element(X$mes, c(6,7,8)) #meses de mayor lluvia al parecer
+mod1 <- gam(formula = as.formula('Y ~ s(EM71.p.day)'), data = X[aux.marcador, ])
+summary(mod1)
 plot(gam(formula = as.formula('Y ~ s(EM71.p.day)'), data = X[aux.marcador, ]))
-plot(gam(formula = as.formula('Y ~ s(EM71.p.lag)'), data = X[aux.marcador, ]))
+plot(gam(formula = as.formula('Y ~ s(EM71.p.lag, df = 3)'), data = X[aux.marcador, ]))
 
-# selección variables (automático) según BIC
-mod_null <- glm(Y ~ 1, family = binomial(logit), data = X)
+#decisión del grado de polinomio (a mano)
+for (station in estaciones){
+  X <- X_list[[station]]
+  aux.marcador <- is.element(X$mes, c(6,7,8)) #meses de mayor lluvia al parecer
+  #variable lag
+  mod.lag <- gam(formula = as.formula(paste0('Y ~ s(', station, '.p.lag)')), data = X[aux.marcador, ])
+  plot(mod.lag, main = paste(station))
+  #variable del dia
+  mod.day <- gam(formula = as.formula(paste0('Y ~ s(', station, '.p.day)')), data = X[aux.marcador, ])
+  plot(mod.day, main = paste(station))
+}
+
+degrees.p.lag <- c(3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
+names(degrees.p.lag) <- estaciones
+degrees.p.day <- c(3, 1, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
+names(degrees.p.day) <- estaciones
+
+# selección variables (automático) según AIC
+#mod_null <- glm(Y ~ 1, family = binomial(logit), data = X)
 harmonics.l <- list(
   h1 = c('s.1.l', 'c.1.l'),
   h2 = c('s.2.l', 'c.2.l'),
@@ -127,27 +147,27 @@ step_rlog <- function(initial_model,
   # initial_model: modelo inicial (modelo nulo)
   # data: datos a utilizar (contiene explicada y explicativas)
   # vars: covariables no armónicas que se desean introducir en el modelo (char)
+  # incluidas siempre? pues al modelo initial 
   # harmonics: lista de armónicos
-  
-  
   
   mod.aux <- initial_model
   cat('Initial model ', deparse(formula(mod.aux)), '\n')
-  cat('BIC: ', BIC(mod.aux), '\n')
+  cat('AIC: ', AIC(mod.aux), '\n')
   
-  if (!is.null(vars)) {
-    for (var in vars){
-      formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
-      mod.temp <- glm(formula.aux, data = data, family = binomial(link = "logit"))
-      
-      if (BIC(mod.temp) < BIC(mod.aux)){
-        cat('Added: ', var, '\n')
-        cat('BIC: ', BIC(mod.temp), '\n')
-        mod.aux <- mod.temp
-      }
-    }
-    
-  }
+  #  asumimos que las covariables siempre son escogidas
+  # if (!is.null(vars)) {
+  #   for (var in vars){
+  #     formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
+  #     mod.temp <- glm(formula.aux, data = data, family = binomial(link = "logit"))
+  #     
+  #     if (AIC(mod.temp) < AIC(mod.aux)){
+  #       cat('Added: ', var, '\n')
+  #       cat('AIC: ', AIC(mod.temp), '\n')
+  #       mod.aux <- mod.temp
+  #     }
+  #   }
+  #   
+  # }
   
   
   for (h in harmonics.l){
@@ -156,9 +176,9 @@ step_rlog <- function(initial_model,
     
     mod.temp <- glm(formula.aux, data = data, family = binomial(logit))
     
-    if (BIC(mod.temp) < BIC(mod.aux)){
+    if (AIC(mod.temp) < AIC(mod.aux)){
       cat('Added: ',paste(h, collapse = '+'), '\n')
-      cat('BIC: ', BIC(mod.temp), '\n')
+      cat('AIC: ', AIC(mod.temp), '\n')
       
       mod.aux <- mod.temp
     }else{
@@ -172,9 +192,9 @@ step_rlog <- function(initial_model,
     
     mod.temp <- glm(formula.aux, data = data, family = binomial(logit))
     
-    if (BIC(mod.temp) < BIC(mod.aux)){
+    if (AIC(mod.temp) < AIC(mod.aux)){
       cat('Added: ',paste(h, collapse = '+'), '\n')
-      cat('BIC: ', BIC(mod.temp), '\n')
+      cat('AIC: ', AIC(mod.temp), '\n')
       
       mod.aux <- mod.temp
     }else{
@@ -183,16 +203,48 @@ step_rlog <- function(initial_model,
   }
   
   cat('\nFinal model: ', deparse(formula(mod.aux)), '\n')
-  cat('BIC: ', BIC(mod.aux), '\n')
+  cat('AIC: ', AIC(mod.aux), '\n\n')
   
   return(mod.aux)
 }
 
-basura <- step_rlog(mod_null, data = X, c('EM71.p.day', 'EM71.p.lag'), harmonics.l, harmonics.h)
+#actualización de modelos
+for (station in estaciones){
+  cat('Estación ', station, '\n\n')
+  
+  deg.lag <- degrees.p.lag[station]
+  deg.day <- degrees.p.day[station]
+  
+  formula_null <- as.formula(paste0('Y ~ ', paste0('poly(', station, '.p.day, ',deg.day, ')'), '+',
+                                    paste0('poly(', station, '.p.lag, ',deg.lag, ')')))
+  
+  mod_null <- glm(formula_null, family = binomial(logit), data = X_list[[station]])
+  
+  mho_list[[station]] <- step_rlog(mod_null, 
+                                   data = X_list[[station]], 
+                                   vars = c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
+                                            paste0('poly(', station, '.p.lag, ',deg.lag, ')')), 
+                                   harmonics.l, harmonics.h)
+}
 
-step(mod, direction = 'backward')
+# for (station in estaciones){
+#   print(summary(mho_list[[station]]))
+# }
 
-# evaluation #put in a Rmarkdow
+# guardado de una lista definitiva por estacion
+# estacion --> modelo, df, variables escogidas
+
+MHO <- list()
+for (station in estaciones){
+  MHO[[station]][['mho']] <- mho_list[[station]]
+  MHO[[station]][['vars']] <- mho_list[[station]]$coefficients
+  MHO[[station]][['X']] <- X_list[[station]]
+} 
+
+#----Estudio comunalidades----
+# stand by 
+
+#----evaluation #put in a Rmarkdow----
 library(pROC)
 
 for (station in estaciones){
