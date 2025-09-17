@@ -380,27 +380,39 @@ df.eventos <- df.eventos[-1, ]
 #maximos 
 max.total <- apply(df_hours[, paste0(estaciones, '.p')], 1, max, na.rm = T)
 summary(max.total[max.total > 0])
-quantile(max.total[max.total > 0], probs = 0.99)
-max.total.max <- df_hours %>%
-  filter(max.total == max(max.total, na.rm = TRUE))
-aux.df[, c('t', 'mes', 'dia.mes', 'h')] <- max.total.max[, c('t', 'mes', 'dia.mes', 'h')]
-aux.df$NAs <- sum(is.na(max.total.max))
-aux.df$sitios.lluvia <- sum(max.total.max[, paste0(estaciones, '.p')] > 0, na.rm = T)
+ev.max <- sort(max.total[max.total> 0], decreasing = T)[1:5]
+aux.ind <- which(max.total %in% ev.max)
+aux.ind <- unique(unlist(lapply(aux.ind, function(i) {
+  seq(max(1, i-2), min(nrow(df_hours), i+2))
+})))
+
+max.total.ev <- df_hours[aux.ind, ]
+aux.df[, c('t', 'mes', 'dia.mes', 'h')] <- max.total.ev[, c('t', 'mes', 'dia.mes', 'h')]
+aux.df$NAs <- apply(max.total.ev, 1, function(x) sum(is.na(x)))
+aux.df$sitios.lluvia <- apply(max.total.ev[, paste0(estaciones, '.p')] > 0,
+                              1, sum, na.rm = T)
 aux.df$frac.lluvia <- aux.df$sitios.lluvia / (length(estaciones) - aux.df$NAs)
-aux.df$mean <- mean(unlist(max.total.max[, paste0(estaciones, '.p')]), na.rm = T)
-aux.df$max <- max(unlist(max.total.max[, paste0(estaciones, '.p')]), na.rm = T)
-aux.df$station.max <- names(max.total.max[, paste0(estaciones, '.p')])[which.max(unlist(max.total.max[, paste0(estaciones, '.p')]))] 
+aux.df$mean <- apply(max.total.ev[, paste0(estaciones, '.p')],
+                     1, mean, na.rm = T)
+aux.df$max <- apply(max.total.ev[, paste0(estaciones, '.p')],
+                    1, max, na.rm = T)
+aux.df$station.max <- sapply(1:length(aux.df$max), function(i) {
+  names(max.total.ev)[which(max.total.ev[i, ] == aux.df$max[i])[1]]  # [1] para tomar la primera coincidencia si hay varias
+})
+
 
 df.eventos <- rbind(df.eventos, aux.df)
 
 #pintar en mapa
 media.total.ev$A126.p <- rep(0, length.out = dim(media.total.ev)[1])
+max.total.ev$A126.p <- rep(0, length.out = dim(max.total.ev)[1])
 
 df.mapa <-  data.frame(
   st_coordinates(stations),
   STAID = stations$STAID
 )
-df.mapa <- cbind(df.mapa, t(media.total.ev[, c(paste0(estaciones, '.p'), 'A126.p')]))
+df.mapa <- cbind(df.mapa, t(media.total.ev[, c(paste0(estaciones, '.p'), 'A126.p')]),
+                 t(max.total.ev[, c(paste0(estaciones, '.p'), 'A126.p')]))
 
 nombres <- c('ev.media-2h', 'ev.media-1h', 'ev.media', 'ev.media+1h', 'ev.media+2h')
 nombres.final <- c()
@@ -408,8 +420,15 @@ for (i in 1:5){
   aux <- paste0(i, '.', nombres)
   nombres.final <- c(nombres.final, aux)
 }
+colnames(df.mapa)[4:(4 + 25 - 1)] <- nombres.final
 
-colnames(df.mapa)[4:ncol(df.mapa)] <- nombres.final
+nombres <- c('ev.max-2h', 'ev.max-1h', 'ev.max', 'ev.max+1h', 'ev.max+2h')
+nombres.final <- c()
+for (i in 1:5){
+  aux <- paste0(i, '.', nombres)
+  nombres.final <- c(nombres.final, aux)
+}
+colnames(df.mapa)[29:ncol(df.mapa)] <- nombres.final
 
 mapa.ind <- function(data, event.no, event.type , lag = ''){
   col <- paste0(event.no, '.ev.', event.type, lag)
@@ -417,6 +436,10 @@ mapa.ind <- function(data, event.no, event.type , lag = ''){
   
   if (event.type == 'media'){
     fecha <- media.total.ev[(event.no * 5 - 1), c('dia.mes', 'mes', 't')]
+  }
+  
+  if (event.type == 'max'){
+    fecha <- max.total.ev[(event.no * 5 - 1), c('dia.mes', 'mes', 't')]
   }
   
   map_zone <- ggplot(hypsobath) +
@@ -457,16 +480,16 @@ mapa.ind <- function(data, event.no, event.type , lag = ''){
   return(map_zone)
 }
 
-mapa.ind(df.mapa, 5, 'media')
+mapa.ind(df.mapa, 5, 'max')
 
 
-mapa.ev <- function(data, event){
+mapa.ev <- function(data, event.no, event.type){
   
-  m1 <- mapa.ind(data, event, '-2h')
-  m2 <- mapa.ind(data, event, '-1h')
-  m3 <- mapa.ind(data, event, '')
-  m4 <- mapa.ind(data, event, '+1h')
-  m5 <- mapa.ind(data, event, '+2h')
+  m1 <- mapa.ind(data, event.no, event.type, '-2h')
+  m2 <- mapa.ind(data, event.no, event.type, '-1h')
+  m3 <- mapa.ind(data, event.no, event.type, '')
+  m4 <- mapa.ind(data, event.no, event.type, '+1h')
+  m5 <- mapa.ind(data, event.no, event.type, '+2h')
   
   mapa <- ggpubr:: ggarrange(m1, m2, m3, m4, m5, 
                              ncol = 5,
@@ -475,7 +498,86 @@ mapa.ev <- function(data, event){
   return(mapa)
 }
 
-mapa.ev(df.mapa, '5.ev.media')
+ggsave(
+  filename = "Mapas/ev.extremos/1.ev.media.png", 
+  plot = mapa.ev(df.mapa, 1, 'media'), 
+  width = 12*1.5,
+  height = 6*1.5,     
+  dpi = 300       
+)
+
+ggsave(
+  filename = "Mapas/ev.extremos/2.ev.media.png", 
+  plot = mapa.ev(df.mapa, 2, 'media'), 
+  width = 12*1.5,
+  height = 6*1.5,     
+  dpi = 300       
+)
+
+ggsave(
+  filename = "Mapas/ev.extremos/3.ev.media.png", 
+  plot = mapa.ev(df.mapa, 3, 'media'), 
+  width = 12*1.5,
+  height = 6*1.5,     
+  dpi = 300       
+)
+
+ggsave(
+  filename = "Mapas/ev.extremos/4.ev.media.png", 
+  plot = mapa.ev(df.mapa, 4, 'media'), 
+  width = 12*1.5,
+  height = 6*1.5,     
+  dpi = 300       
+)
+
+ggsave(
+  filename = "Mapas/ev.extremos/5.ev.media.png", 
+  plot = mapa.ev(df.mapa, 5, 'media'), 
+  width = 12*1.5,
+  height = 6*1.5,     
+  dpi = 300       
+)
+
+ggsave(
+  filename = "Mapas/ev.extremos/1.ev.max.png", 
+  plot = mapa.ev(df.mapa, 1, 'max'), 
+  width = 12*1.5,
+  height = 6*1.5,     
+  dpi = 300       
+)
+
+ggsave(
+  filename = "Mapas/ev.extremos/2.ev.max.png", 
+  plot = mapa.ev(df.mapa, 2, 'max'), 
+  width = 12*1.5,
+  height = 6*1.5,     
+  dpi = 300       
+)
+
+ggsave(
+  filename = "Mapas/ev.extremos/3.ev.max.png", 
+  plot = mapa.ev(df.mapa, 3, 'max'), 
+  width = 12*1.5,
+  height = 6*1.5,     
+  dpi = 300       
+)
+
+ggsave(
+  filename = "Mapas/ev.extremos/4.ev.max.png", 
+  plot = mapa.ev(df.mapa, 4, 'max'), 
+  width = 12*1.5,
+  height = 6*1.5,     
+  dpi = 300       
+)
+
+ggsave(
+  filename = "Mapas/ev.extremos/5.ev.max.png", 
+  plot = mapa.ev(df.mapa, 5, 'max'), 
+  width = 12*1.5,
+  height = 6*1.5,     
+  dpi = 300       
+)
+
 
 map_zone <- ggplot(hypsobath) +
   geom_sf(aes(fill = val_inf), color = NA) +
