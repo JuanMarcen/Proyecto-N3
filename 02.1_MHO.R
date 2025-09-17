@@ -90,12 +90,12 @@ for (station in estaciones){
 # X <- get(paste0('X.', estaciones[1]))
 mod <- mho_list[[estaciones[15]]]
 X <- X_list[[estaciones[15]]]
-mod_rebuilt <- glm(formula = formula(mod), family = binomial(link = "logit"), data = X)
-step(mod_rebuilt, direction = "backward")
+# mod_rebuilt <- glm(formula = formula(mod), family = binomial(link = "logit"), data = X)
+# step(mod_rebuilt, direction = "backward")
 
 #----actualización de modelos----
 #borrador
-basura <- update(mod, data = X, formula = .~. + poly(P024.p.lag, 3))
+basura <- update(mod, data = X, formula = .~. - P024.p.lag:P024.p.day)
 basura <- update(mho.EM71, data = X.EM71, formula = .~. + 
                    poly(EM71.p.day, 2) + poly(EM71.p.lag, 2))
 
@@ -155,19 +155,19 @@ step_rlog <- function(initial_model,
   cat('AIC: ', AIC(mod.aux), '\n')
   
   #  asumimos que las covariables siempre son escogidas
-  # if (!is.null(vars)) {
-  #   for (var in vars){
-  #     formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
-  #     mod.temp <- glm(formula.aux, data = data, family = binomial(link = "logit"))
-  #     
-  #     if (AIC(mod.temp) < AIC(mod.aux)){
-  #       cat('Added: ', var, '\n')
-  #       cat('AIC: ', AIC(mod.temp), '\n')
-  #       mod.aux <- mod.temp
-  #     }
-  #   }
-  #   
-  # }
+  if (!is.null(vars)) {
+    for (var in vars){
+      formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
+      mod.temp <- glm(formula.aux, data = data, family = binomial(link = "logit"))
+
+      if (AIC(mod.temp) < AIC(mod.aux)){
+        cat('Added: ', var, '\n')
+        cat('AIC: ', AIC(mod.temp), '\n')
+        mod.aux <- mod.temp
+      }
+    }
+
+  }
   
   
   for (h in harmonics.l){
@@ -218,12 +218,13 @@ for (station in estaciones){
   formula_null <- as.formula(paste0('Y ~ ', paste0('poly(', station, '.p.day, ',deg.day, ')'), '+',
                                     paste0('poly(', station, '.p.lag, ',deg.lag, ')')))
   
-  mod_null <- glm(formula_null, family = binomial(logit), data = X_list[[station]])
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = X_list[[station]])
   
   mho_list[[station]] <- step_rlog(mod_null, 
                                    data = X_list[[station]], 
                                    vars = c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
-                                            paste0('poly(', station, '.p.lag, ',deg.lag, ')')), 
+                                            paste0('poly(', station, '.p.lag, ',deg.lag, ')'),
+                                            paste0(station,'.p.lag:',station,'.p.day')), 
                                    harmonics.l, harmonics.h)
 }
 
@@ -241,6 +242,28 @@ for (station in estaciones){
   MHO[[station]][['X']] <- X_list[[station]]
 } 
 
+# SELECCIÓN AUTOMÁTICA DE MODELO SEGÚN ESTUDIO DE MODELOS ANIDADOS (STAND BY)
+data <- X_list[[1]]
+initial_model <- glm(Y ~ 1, family = binomial(logit), data = data)
+
+station <- estaciones[1]
+vars <- c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
+          paste0('poly(', station, '.p.lag, ',deg.lag, ')'),
+          paste0(station,'.p.lag:',station,'.p.day'))
+
+for (i in 1:length(vars)){
+  mod.aux <- update(initial_model, data = data, formula = as.formula(paste(". ~ . +", vars[i])))
+  
+  aux <- anova(initial_model, mod.aux)
+  pval <- aux$`Pr(>Chi)`[2]
+  
+  if (pval < 0.05){
+    initial_model <- mod.aux
+    cat('Variable añadida: ', vars[i], '\n')
+  }
+}
+
+
 #----Estudio comunalidades (DIRIA QUE MEJOR PARA DIARIAS)----
 # stand by 
 
@@ -248,8 +271,8 @@ for (station in estaciones){
 library(pROC)
 
 for (station in estaciones){
-  mho <- get(paste0('mho.', station))
-  X <- get(paste0('X.', station))
+  mho <- mho_list[[station]]
+  X <- X_list[[station]]
   
   summary(mho)
   

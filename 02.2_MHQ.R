@@ -70,6 +70,10 @@ fit <- glm(formula,
            family = Gamma(link = 'log'),
            data = X_final)
 summary(fit)
+
+plot(fit)
+
+
 fit$offset
 sum <- summary(fit)
 r <- 1 / sum$dispersion #estimation of shape parameter
@@ -90,6 +94,11 @@ fit <- gamlss(formula, sigma.fo = ~ mes, family = GA, data = X_final)
 sum <- summary(fit)
 
 plot(1 / fit$sigma.fv, type = 'l')
+
+
+r <- 1/sum$dispersion
+r
+
 
 
 # chat ? 
@@ -125,6 +134,8 @@ y_sim <- rgamma(length(mu), shape = alpha, scale = scale)
 plot(X_final[[station.p]], type = "p", pch = 16, col = "black",
     main = "Valores reales vs predichos y simulados",
     xlab = "Índice", ylab = "Respuesta")
+aux <- cbind(X_final[[station.p]], y_sim)
+head(aux)
 lines(mu, col = "blue", lwd = 2)              # media predicha
 points(y_sim, col = rgb(1, 0, 0, 0.5), pch = 16)  # simulaciones
 legend("topright", legend = c("Observado", "Media predicha", "Simulado"),
@@ -133,9 +144,5 @@ legend("topright", legend = c("Observado", "Media predicha", "Simulado"),
 plot(density(X_final[[station.p]]), col = 'blue', lwd = 2)
 lines(density(y_sim), col = 'red', lwd = 2)
 
-qqplot(X_final[[station.p]], y_sim,
-       main = "Q-Q Plot Observado vs Simulado",
-       xlab = "Cuantiles observados", ylab = "Cuantiles simulados",
-       pch = 16, col = "blue")
 
-abline(0, 1, col = "red", lwd = 2)
+
