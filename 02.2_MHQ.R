@@ -90,3 +90,52 @@ fit <- gamlss(formula, sigma.fo = ~ mes, family = GA, data = X_final)
 sum <- summary(fit)
 
 plot(1 / fit$sigma.fv, type = 'l')
+
+
+# chat ? 
+# Ajuste con link log
+fit_log <- glm(formula,
+               family = Gamma(link = "log"),
+               data = X_final)
+
+# Ajuste con link inverse
+fit_inv <- glm(formula,
+               family = Gamma(link = "inverse"),
+               data = X_final,
+               start = rep(0.1, times = length(coef(fit_log))))
+
+summary(fit_log)
+summary(fit_inv)
+
+pred_log <- predict(fit_log, type = "response")   # en escala de la media
+pred_inv <- predict(fit_inv, type = "response")
+
+# Comparar primeras filas
+head(data.frame(pred_log, fit$mu.fv, real = X_final[[station.p]]), 10)
+AIC(fit_log, fit_inv)
+
+
+phi <- summary(fit_log)$dispersion  # estimación de la dispersión
+alpha <- 1/phi                      # shape
+mu <- predict(fit_log, type = "response")
+scale <- mu / alpha
+
+# Simulación de valores posibles de Y
+y_sim <- rgamma(length(mu), shape = alpha, scale = scale)
+plot(X_final[[station.p]], type = "p", pch = 16, col = "black",
+    main = "Valores reales vs predichos y simulados",
+    xlab = "Índice", ylab = "Respuesta")
+lines(mu, col = "blue", lwd = 2)              # media predicha
+points(y_sim, col = rgb(1, 0, 0, 0.5), pch = 16)  # simulaciones
+legend("topright", legend = c("Observado", "Media predicha", "Simulado"),
+       col = c("black", "blue", "red"), pch = c(16, NA, 16), lty = c(NA, 1, NA))
+
+plot(density(X_final[[station.p]]), col = 'blue', lwd = 2)
+lines(density(y_sim), col = 'red', lwd = 2)
+
+qqplot(X_final[[station.p]], y_sim,
+       main = "Q-Q Plot Observado vs Simulado",
+       xlab = "Cuantiles observados", ylab = "Cuantiles simulados",
+       pch = 16, col = "blue")
+
+abline(0, 1, col = "red", lwd = 2)

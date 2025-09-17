@@ -335,14 +335,182 @@ for (station in estaciones){
 
 
 #----eventos extremos, para ver cuadno son las fechas --> dependencias espaciales----
-basura1 <- apply(df_hours[, paste0(estaciones, '.p')] > 0, 1, mean, na.rm = T)
-hist(basura)
-basura2 <- apply(df_hours[, paste0(estaciones, '.p')], 1, mean, na.rm = T)
-summary(basura[basura > 0])
-hist(basura[basura > 0])
-basura3 <- apply(df_hours[, paste0(estaciones, '.p')], 1, max, na.rm = T)
-summary(basura3[basura3 > 0])
-hist(basura3[basura3 > 0])
+df.eventos <- data.frame(matrix(NA, nrow = 1, ncol = 10))
+colnames(df.eventos) <- c('t', 'mes', 'dia.mes', 'h', 
+                          'NAs', 'sitios.lluvia', 'frac.lluvia', 
+                          'mean', 'max', 'station.max')
+
+# para cada estudio seleccionamos 5 eventos + 2horas antes y dos horas depsues
+# --> 25 filas
+aux.df <- data.frame(matrix(NA, nrow = 25, ncol = 10))
+colnames(aux.df) <- c('t', 'mes', 'dia.mes', 'h', 
+                          'NAs', 'sitios.lluvia', 'frac.lluvia', 
+                          'mean', 'max', 'station.max')
+
+medias.lluvia.todos <- apply(df_hours[, paste0(estaciones, '.p')] > 0, 1, mean, na.rm = T)
+summary(medias.lluvia.todos)
+
+# medias
+medias.total <- apply(df_hours[, paste0(estaciones, '.p')], 1, mean, na.rm = T)
+summary(medias.total[medias.total > 0])
+ev.medias <- sort(medias.total[medias.total> 0], decreasing = T)[1:5]
+aux.ind <- which(medias.total %in% ev.medias)
+aux.ind <- unique(unlist(lapply(aux.ind, function(i) {
+  seq(max(1, i-2), min(nrow(df_hours), i+2))
+})))
+
+media.total.ev <- df_hours[aux.ind, ]
+aux.df[, c('t', 'mes', 'dia.mes', 'h')] <- media.total.ev[, c('t', 'mes', 'dia.mes', 'h')]
+aux.df$NAs <- apply(media.total.ev, 1, function(x) sum(is.na(x)))
+aux.df$sitios.lluvia <- apply(media.total.ev[, paste0(estaciones, '.p')] > 0,
+                              1, sum, na.rm = T)
+aux.df$frac.lluvia <- aux.df$sitios.lluvia / (length(estaciones) - aux.df$NAs)
+aux.df$mean <- apply(media.total.ev[, paste0(estaciones, '.p')],
+                     1, mean, na.rm = T)
+aux.df$max <- apply(media.total.ev[, paste0(estaciones, '.p')],
+                    1, max, na.rm = T)
+aux.df$station.max <- sapply(1:length(aux.df$max), function(i) {
+  names(media.total.ev)[which(media.total.ev[i, ] == aux.df$max[i])[1]]  # [1] para tomar la primera coincidencia si hay varias
+})
+
+  
+df.eventos <- rbind(df.eventos, aux.df)
+df.eventos <- df.eventos[-1, ]
+
+#maximos 
+max.total <- apply(df_hours[, paste0(estaciones, '.p')], 1, max, na.rm = T)
+summary(max.total[max.total > 0])
+quantile(max.total[max.total > 0], probs = 0.99)
+max.total.max <- df_hours %>%
+  filter(max.total == max(max.total, na.rm = TRUE))
+aux.df[, c('t', 'mes', 'dia.mes', 'h')] <- max.total.max[, c('t', 'mes', 'dia.mes', 'h')]
+aux.df$NAs <- sum(is.na(max.total.max))
+aux.df$sitios.lluvia <- sum(max.total.max[, paste0(estaciones, '.p')] > 0, na.rm = T)
+aux.df$frac.lluvia <- aux.df$sitios.lluvia / (length(estaciones) - aux.df$NAs)
+aux.df$mean <- mean(unlist(max.total.max[, paste0(estaciones, '.p')]), na.rm = T)
+aux.df$max <- max(unlist(max.total.max[, paste0(estaciones, '.p')]), na.rm = T)
+aux.df$station.max <- names(max.total.max[, paste0(estaciones, '.p')])[which.max(unlist(max.total.max[, paste0(estaciones, '.p')]))] 
+
+df.eventos <- rbind(df.eventos, aux.df)
+
+#pintar en mapa
+media.total.ev$A126.p <- rep(0, length.out = dim(media.total.ev)[1])
+
+df.mapa <-  data.frame(
+  st_coordinates(stations),
+  STAID = stations$STAID
+)
+df.mapa <- cbind(df.mapa, t(media.total.ev[, c(paste0(estaciones, '.p'), 'A126.p')]))
+
+nombres <- c('ev.media-2h', 'ev.media-1h', 'ev.media', 'ev.media+1h', 'ev.media+2h')
+nombres.final <- c()
+for (i in 1:5){
+  aux <- paste0(i, '.', nombres)
+  nombres.final <- c(nombres.final, aux)
+}
+
+colnames(df.mapa)[4:ncol(df.mapa)] <- nombres.final
+
+mapa.ind <- function(data, event.no, event.type , lag = ''){
+  col <- paste0(event.no, '.ev.', event.type, lag)
+  event <- paste0(event.no, '.ev.', event.type)
+  
+  if (event.type == 'media'){
+    fecha <- media.total.ev[(event.no * 5 - 1), c('dia.mes', 'mes', 't')]
+  }
+  
+  map_zone <- ggplot(hypsobath) +
+    geom_sf(aes(fill = val_inf), color = NA) +
+    geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
+    coord_sf(xlim = st_coordinates(limits)[,1], 
+             ylim = st_coordinates(limits)[,2]) + 
+    scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
+                      breaks = levels(hypsobath$val_inf),
+                      guide = 'none') +
+    xlab("Longitud") + ylab("Latitud") +
+    
+    # no NA
+    geom_point(aes(x = X, y = Y, 
+                   size = data[!is.na(data[[col]]),col], 
+                   color = stations$color[!is.na(data[[col]])]), 
+               data = data[!is.na(data[[col]]), ]) +
+    scale_size_continuous(name = "Lluvia", 
+                          limits = range(data[[event]], na.rm = TRUE)) +
+    # NA
+    geom_point(aes(x = X, y = Y, 
+                   color = stations$color[is.na(data[[col]])]), 
+               data = data[is.na(data[[col]]), ], 
+               shape = 4, size = 2, stroke = 1.5) +
+    
+    ggrepel::geom_label_repel(aes(x = X, y = Y, 
+                                  label = stations$STAID, 
+                                  color = stations$color), 
+                              size = 3.5,
+                              position = 'identity', label.size = 0.025,
+                              max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                              data = data,
+                              seed = 23) +
+    
+    scale_color_identity() +
+    ggtitle(label = paste(paste(fecha, collapse = '/'), lag))
+  
+  return(map_zone)
+}
+
+mapa.ind(df.mapa, 5, 'media')
+
+
+mapa.ev <- function(data, event){
+  
+  m1 <- mapa.ind(data, event, '-2h')
+  m2 <- mapa.ind(data, event, '-1h')
+  m3 <- mapa.ind(data, event, '')
+  m4 <- mapa.ind(data, event, '+1h')
+  m5 <- mapa.ind(data, event, '+2h')
+  
+  mapa <- ggpubr:: ggarrange(m1, m2, m3, m4, m5, 
+                             ncol = 5,
+                             common.legend = T,
+                             legend = 'bottom')
+  return(mapa)
+}
+
+mapa.ev(df.mapa, '5.ev.media')
+
+map_zone <- ggplot(hypsobath) +
+  geom_sf(aes(fill = val_inf), color = NA) +
+  geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
+  coord_sf(xlim = st_coordinates(limits)[,1], 
+           ylim = st_coordinates(limits)[,2]) + 
+  scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
+                    breaks = levels(hypsobath$val_inf),
+                    guide = guide_legend(reverse = TRUE)) +
+  xlab("Longitud") + ylab("Latitud") +
+  
+  geom_point(aes(x = X, y = Y, 
+                 size = media.val, 
+                 color = stations$color[!is.na(df.mapa$media.val)]), 
+             data = df.mapa[!is.na(df.mapa$media.val), ]) +
+  
+  geom_point(aes(x = X, y = Y, 
+                 color = stations$color[is.na(df.mapa$media.val)]), 
+             data = df.mapa[is.na(df.mapa$media.val), ], 
+             shape = 4, size = 2, stroke = 1.5) +
+  
+  ggrepel::geom_label_repel(aes(x = X, y = Y, 
+                                label = stations$STAID, 
+                                color = stations$color), 
+                            size = 3.5,
+                            position = 'identity', label.size = 0.025,
+                            max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                            data = df.mapa,
+                            seed = 23) +
+  
+  scale_color_identity() +
+  ggtitle(label = paste('Evento extremo'))
+
+map_zone
+
 
 #----Rachas----
 # METER EN LA FUNCION DE SCAR DATOS 
