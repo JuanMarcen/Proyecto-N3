@@ -8,10 +8,12 @@ stations <- readRDS("stations.rds")
 stations$Grid <- paste0(round(stations$LAT),"N.",abs(round(stations$LON)),ifelse(stations$LON>-0.5,"E","W"))
 
 # Target grid points
-# Corner points
-cpoints <- c("45N.10W","45N.5E","35N.10W","35N.5E")
+# Corner points, last 4 are the ones we will use
+cpoints <- c("45N.10W","45N.5E","35N.10W","35N.5E", "42N.2W", "42N.1W", "41N.2W", "41N.1W")
+cpoints.4 <- c("42N.2W", "42N.1W", "41N.2W", "41N.1W")
 # Near-station points
-tpoints <- c(cpoints,unique(stations$Grid))
+tpoints <- unique(c(cpoints,unique(stations$Grid)))
+tpoints <- cpoints.4
 # Reference period
 ref_period <- c("1997-01-01","2023-12-31")
 
@@ -42,9 +44,10 @@ gdf <- data.frame(STAID = rep(stations$STAID, each = nrow(era5)),
 eralevels <- paste0("zg",c("300", "500","700"))
 # Corner points
 cpoints <- c("45N.10W","45N.5E","35N.10W","35N.5E")
+cpoints.4 <- c("42N.2W", "42N.1W", "41N.2W", "41N.1W")
 # Define variable names
 vnames <- paste(rep(eralevels, length(cpoints)+1),
-                rep(c("",cpoints),each = length(eralevels)),
+                rep(c("",cpoints.4),each = length(eralevels)),
                 sep = ".")
 
 # Global variables
@@ -79,3 +82,4 @@ gdf <- cbind(gdf,gmat)
 # Write data.frame
 saveRDS(object = gdf,
         file = "global_df.rds")
+

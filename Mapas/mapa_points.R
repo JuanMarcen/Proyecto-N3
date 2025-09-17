@@ -17,8 +17,10 @@ library(rnaturalearthdata)
 limits <- st_transform(
   as(
     SpatialPointsDataFrame(
-      coords = data.frame(X = c(-2, -1), Y = c(40.3, 42)), 
-      data = data.frame(X = c(-2, -1), Y = c(40.3, 42)),
+      #coords = data.frame(X = c(-2, -1), Y = c(40.3, 42)),
+      #coords = data.frame(X = c(-2, -1), Y = c(40.3, 42)),
+      coords = data.frame(X = c(-3.2, 0.2), Y = c(39, 44)),
+      data = data.frame(X = c(-3.2, 0.2), Y = c(39, 44)),
       proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")),
     'sf'
   ),
@@ -39,6 +41,21 @@ stations <- st_transform(
     SpatialPointsDataFrame(
       coords = stations[c("LON", "LAT")], 
       data = stations[c("STAID", "NAME", "LON", "LAT", "X", "Y", 'Z', 'color')],
+      proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")),
+    'sf'
+  ),
+  2062
+)
+
+cpoints <- data.frame(
+  LON = c(-1, -1, -1, -1, 0, 0, 0, 0, -2, -2, -2, -2, -3, -3, -3, -3),
+  LAT = rep(40:43, times = 4)
+)
+cpoints <- st_transform(
+  as(
+    SpatialPointsDataFrame(
+      coords = cpoints[c("LON", "LAT")], 
+      data = cpoints[c("LON", "LAT")],
       proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")),
     'sf'
   ),
@@ -85,6 +102,8 @@ save(stations,
      rios,
      file = 'Mapas/data_mapas.RData')
 
+
+
 map_zone <- ggplot(hypsobath) +
   geom_sf(aes(fill = val_inf), color = NA) +
   geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
@@ -94,7 +113,12 @@ map_zone <- ggplot(hypsobath) +
                     breaks = levels(hypsobath$val_inf),
                     guide = guide_legend(reverse = TRUE)) +
   xlab("Longitud") + ylab("Latitud") +
-  geom_point(aes(x = X, y = Y), data = data.frame(st_coordinates(stations))) +
+  geom_point(aes(x = X, y = Y, color = stations$color), data = data.frame(st_coordinates(stations))) +
+  geom_point(aes(x = X, y = Y),
+             data = data.frame(st_coordinates(cpoints)),
+             col = 'black',
+             size = 3, 
+             shape = 15) + 
   ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations$STAID, color = stations$color), 
                             size = 3.5,
                             position = 'identity', label.size = 0.025,
