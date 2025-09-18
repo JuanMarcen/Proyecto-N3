@@ -34,7 +34,7 @@ df_hours <- df_hours %>%
   left_join(harm_h, by = 'h')
 
 # prueba para una estación. Juguetear
-station <- estaciones[1]
+station <- estaciones[16]
 station.p <- paste0(station, '.p')
 X <- df_hours[, c('t', 'l', 'mes', 'dia.mes', 'h', station.p,
                   colnames(harm_l)[2:ncol(harm_l)],
@@ -89,12 +89,21 @@ qqnorm(residuals(fit, type="pearson")); qqline(residuals(fit, type="pearson"))
 
 
 library(gamlss)
-fit <- gamlss(formula, sigma.fo = ~ mes, family = GA, data = X_final)
+fit <- gamlss(formula, sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
+              family = GA, data = X_final)
 
 sum <- summary(fit)
 
-plot(1 / fit$sigma.fv, type = 'l')
+shape <- fit$sigma.fv^2
 
+#rate
+plot(1 / fit$sigma.fv^2, type = 'l')
+
+coef.var <- tapply(fit$sigma.fv, INDEX = X_final$mes, mean)
+plot(coef.var, type = 'l')
+
+media_mensual <- tapply(1/fit$sigma.fv^2, INDEX = X_final$mes, mean)
+plot(media_mensual, type = 'l')
 
 r <- 1/sum$dispersion
 r

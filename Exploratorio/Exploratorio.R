@@ -4,6 +4,7 @@ load('data.RData')
 stations <- readRDS('stations.rds')
 
 library(dplyr)
+
 #----Existence number of data months (hourly and 15')----
 par(mfrow = c(4,4))
 aux.ind <- df_hours$t + (df_hours$mes - 0.5)/12
@@ -35,19 +36,26 @@ dev.off()
 # I need info for each station
 
 # objective. 1 dataframe for each station
-df.desc.mes <- function(station, data){ #añadir data de rachas para menor tiempo de computacion 
+library(MASS)
+df.desc <- function(station, data, tipo){ #añadir data de rachas para menor tiempo de computacion 
+  
+  if (tipo == 'mes'){
+    n <- 12
+  }else if (tipo == 'h'){
+    n <- 24
+  }
   
   #info per months (due to possible stationality)
-  df <- as.data.frame(matrix(NA, ncol = 1, nrow = 12))
-  colnames(df) <- 'Mes'
-  df$Mes <- sort(unique(data$mes))
+  df <- as.data.frame(matrix(NA, ncol = 1, nrow = n))
+  colnames(df) <- tipo
+  df[[tipo]] <- sort(unique(data[[tipo]]))
   
-  df_station <- data[, c('t', 'l', 'mes', 'dia.mes', paste0(station, '.p'))]
+  df_station <- data[, c('t', 'l', 'mes', 'dia.mes', 'h', paste0(station, '.p'))]
   
   # things to compute
   # 1. rel. freq of 0's for each month (not taking into account NA's)
-  cant0 <- tapply(df_station[[paste0(station, '.p')]] == 0, df_station$mes, sum, na.rm = T)
-  total <- tapply(!is.na(df_station[, paste0(station, '.p')]), df_station$mes, sum)
+  cant0 <- tapply(df_station[[paste0(station, '.p')]] == 0, df_station[[tipo]], sum, na.rm = T)
+  total <- tapply(!is.na(df_station[, paste0(station, '.p')]), df_station[[tipo]], sum)
   freq0 <- as.data.frame(cant0 / total * 100)
   
   df$f.rel.0 <- round(freq0[, 1], 3)
@@ -57,35 +65,47 @@ df.desc.mes <- function(station, data){ #añadir data de rachas para menor tiemp
     filter(.data[[paste0(station, ".p")]] > 0)
   
   # 2.1 media
-  media <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0$mes, mean, na.rm = T))
+  media <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0[[tipo]], mean, na.rm = T))
   df$media <- round(media[, 1], 3)
   
   # 2.2 mediana
-  mediana <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0$mes, median, na.rm = T))
+  mediana <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0[[tipo]], median, na.rm = T))
   df$mediana <- round(mediana[, 1], 3)
   
   # 2.3 cuantiles 0.90, 0.99 y 0.95
-  quant.geq.0 <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0$mes, quantile, probs = c(0.9),na.rm = T))
+  quant.geq.0 <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0[[tipo]], quantile, probs = c(0.9),na.rm = T))
   df$q0.90 <- round(quant.geq.0[, 1], 3)
   
-  quant.geq.0 <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0$mes, quantile, probs = c(0.95),na.rm = T))
+  quant.geq.0 <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0[[tipo]], quantile, probs = c(0.95),na.rm = T))
   df$q0.95 <- round(quant.geq.0[, 1], 3)
   
-  quant.geq.0 <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0$mes, quantile, probs = c(0.99),na.rm = T))
+  quant.geq.0 <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0[[tipo]], quantile, probs = c(0.99),na.rm = T))
   df$q0.99 <- round(quant.geq.0[, 1], 3)
   
   # 2.4 máximo
-  max <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0$mes, max, na.rm = T))
+  max <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0[[tipo]], max, na.rm = T))
   df$max <- round(max[, 1], 3)
   
   # r y lambda de una gamma 
-  var <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0$mes, var, na.rm = T))
+  var <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0[[tipo]], var, na.rm = T))
   df$var <- var[, 1]
   
+  fit <- tapply(df_no0[, paste0(station, '.p')], df_no0[[tipo]], function(x) fitdistr(x, 'gamma'))
+  df$shape.mle <- sapply(fit, function(x) x$estimate['shape'])
+  df$rate.mle <- sapply(fit, function(x) x$estimate['rate'])
+  
+  #aux1 <- log(media[, 1])
+  #aux2 <- data.frame(tapply(df_no0[, paste0(station, '.p')], df_no0[[tipo]], function(x) mean(log(x), na.rm = T)))
+  #s <- aux1 - aux2[, 1]
+  
   df$r <- media[, 1]^2 / var[, 1] 
+  #df[['r.2']] <- (3 - s + sqrt((s - 3)^2 + 24 * s)) / (12 * s)
   df$lambda <- df$r / media[, 1]
+  #df$lambda.2 <- df$r.2 / media[, 1]
   
   df$coef.var <- 1 / sqrt(df$r)
+  #df$coef.var.2 <- 1 / sqrt(df$r.2)
+  df$coef.var.mle <- 1 / sqrt(df$shape.mle)
   
   # RACHAS (3 h --> 3 columnas mas)
   # RACHAS (6H --> 6 COLUMNAS MAS)
@@ -94,8 +114,16 @@ df.desc.mes <- function(station, data){ #añadir data de rachas para menor tiemp
 }
 
 for (station in estaciones){
-  assign(paste0('df.h.desc.', station), df.desc.mes(station, df_hours))
+  assign(paste0('df.h.desc.', station), df.desc(station, df_hours, tipo = 'mes'))
 }   
+
+for (station in estaciones){
+  assign(paste0('df.h.desc.h.', station), df.desc(station, df_hours, tipo = 'h'))
+}   
+
+# for (station in estaciones){
+#   assign(paste0('df.h.desc.l.', station), df.desc(station, df_hours, tipo = 'l'))
+# }   
 
 # in case we want the info for data every 15'
 for (station in estaciones){
@@ -146,7 +174,7 @@ cols <- createPalette(16, c("#FF0000", "#0000FF", "#00FF00", "#FFFF00",
                             '#ADD8E6', '#EE82EE'))
 
 
-graph.col.df <- function(stations, name.df, col, ylab, cols){
+graph.col.df <- function(stations, name.df, col, ylab, cols, tipo = 'mes'){
   
   dfs <- mget(paste0(name.df, estaciones), envir = .GlobalEnv)
   valores <- unlist(lapply(dfs, function(x) x[[col]]))
@@ -155,14 +183,14 @@ graph.col.df <- function(stations, name.df, col, ylab, cols){
   
   station <- stations[1]
   aux.df <- get(paste0(name.df, station))
-  plot(aux.df$Mes, aux.df[[col]], type = 'b', pch = 19,
+  plot(aux.df[[tipo]], aux.df[[col]], type = 'b', pch = 19,
        ylim = c(min, max),
-       xlab = 'Mes', ylab = ylab,
+       xlab = tipo, ylab = ylab,
        col = cols[1])
   for (i in 2:length(stations)){
     station <- stations[i]
     aux.df <- get(paste0(name.df, station))
-    lines(aux.df$Mes, aux.df[[col]], type = 'b', pch = 19,
+    lines(aux.df[[tipo]], aux.df[[col]], type = 'b', pch = 19,
           col = cols[i])
   }
   
@@ -178,8 +206,10 @@ graph.col.df(estaciones, 'df.h.desc.', 'q0.95', 'Cuantil 0.95 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'q0.99', 'Cuantil 0.99 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'max', 'Máximo mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'f.rel.0', 'Freq.rel.0 mensual', cols)
-graph.col.df(estaciones, 'df.h.desc.', 'r', 'Parámetro de forma mensual', cols)
-graph.col.df(estaciones, 'df.h.desc.', 'coef.var', 'Coeficiente de variación mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'shape.mle', 'Parámetro de forma mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'coef.var.mle', 'Coeficiente de variación mensual', cols)
+
+graph.col.df(estaciones, 'df.h.desc.h.', 'coef.var.mle', 'Coeficiente de variación horario', cols, tipo = 'h')
 
 graph.col.df(estaciones, 'df.min.desc.', 'media', 'Media mensual', cols)
 graph.col.df(estaciones, 'df.min.desc.', 'mediana', 'Mediana mensual', cols)
