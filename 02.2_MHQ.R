@@ -34,7 +34,7 @@ df_hours <- df_hours %>%
   left_join(harm_h, by = 'h')
 
 # prueba para una estación. Juguetear
-station <- estaciones[16]
+station <- estaciones[1]
 station.p <- paste0(station, '.p')
 X <- df_hours[, c('t', 'l', 'mes', 'dia.mes', 'h', station.p,
                   colnames(harm_l)[2:ncol(harm_l)],
@@ -63,7 +63,11 @@ X_final <- X_final %>%
 hist(X_final[, station.p], breaks = 50, prob = T)
 lines(density(X_final[, station.p]), col = 'blue')
 
-formula <- as.formula(paste(station.p, '~',  paste(colnames(X_final)[8:ncol(X_final)], collapse = '+')))
+formula <- as.formula(paste(station.p, '~',  paste(colnames(X_final)[8:(ncol(X_final) - 2)], 
+                                                   collapse = '+'), '+',
+                            paste0('poly(', station, '.p.day, ',3, ')'), '+' ,
+                            paste0('poly(', station, '.p.lag, ',3, ')'), '+',
+                            paste0(station,'.p.lag:',station,'.p.day')))
 formula
 
 fit <- glm(formula,
@@ -93,8 +97,9 @@ fit <- gamlss(formula, sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + I(
               family = GA, data = X_final)
 
 sum <- summary(fit)
+plot(fit)
 
-shape <- fit$sigma.fv^2
+
 
 #rate
 plot(1 / fit$sigma.fv^2, type = 'l')
@@ -105,10 +110,15 @@ plot(coef.var, type = 'l')
 media_mensual <- tapply(1/fit$sigma.fv^2, INDEX = X_final$mes, mean)
 plot(media_mensual, type = 'l')
 
-r <- 1/sum$dispersion
-r
+shape <- 1 / fit$sigma.fv^2
+rate <- shape / fit$mu.fv
 
+hist(X_final[, station.p], breaks = 50, prob = T)
+lines(density(X_final[, station.p]), col = 'blue')
+y_sim <- rgamma(length(shape), shape = shape, rate = rate)
+lines(density(y_sim), col = 'red', lwd = 2)
 
+#------
 
 # chat ? 
 # Ajuste con link log

@@ -6,12 +6,12 @@ load('data.RData')
 
 
 # harmonics
-cs <- function(t,harmonics=1) {
+cs <- function(t,harmonics=1, total) {
   # if(min(t) <0 | max(t) > 1){ stop(" t must be in [0,1] range")}
   if(min(harmonics) <1){stop("harmonics > = 1")}
   ret <- numeric(0)
   for ( i in harmonics) {
-    ret <- cbind( ret, cos(2*pi*i*t/365), sin(2*pi*i*t/365))
+    ret <- cbind( ret, cos(2*pi*i*t/total), sin(2*pi*i*t/total))
   }
   if (missing(harmonics)) cnames <- c('c','s')
   else {
@@ -24,10 +24,10 @@ cs <- function(t,harmonics=1) {
 l <- 1:365
 h <- 0:23
 harm_l <- data.frame(l = l,
-                     cs(l, harmonics = 1:4))
+                     cs(l, harmonics = 1:4, 365))
 colnames(harm_l)[2:ncol(harm_l)] <- paste0(colnames(harm_l)[2:ncol(harm_l)], '.l')
 harm_h <- data.frame(h = h,
-                        cs(0:23, harmonics = 1:4))
+                        cs(0:23, harmonics = 1:4, 24))
 colnames(harm_h)[2:ncol(harm_h)] <- paste0(colnames(harm_h)[2:ncol(harm_h)], '.h')
 
 
@@ -215,8 +215,8 @@ for (station in estaciones){
   deg.lag <- degrees.p.lag[station]
   deg.day <- degrees.p.day[station]
   
-  formula_null <- as.formula(paste0('Y ~ ', paste0('poly(', station, '.p.day, ',deg.day, ')'), '+',
-                                    paste0('poly(', station, '.p.lag, ',deg.lag, ')')))
+  #formula_null <- as.formula(paste0('Y ~ ', paste0('poly(', station, '.p.day, ',deg.day, ')'), '+',
+  #                                  paste0('poly(', station, '.p.lag, ',deg.lag, ')')))
   
   mod_null <- glm(Y ~ 1, family = binomial(logit), data = X_list[[station]])
   
@@ -241,6 +241,8 @@ for (station in estaciones){
   MHO[[station]][['vars']] <- mho_list[[station]]$coefficients
   MHO[[station]][['X']] <- X_list[[station]]
 } 
+
+saveRDS(MHO, 'MHO.rds')
 
 # SELECCIÓN AUTOMÁTICA DE MODELO SEGÚN ESTUDIO DE MODELOS ANIDADOS (STAND BY)
 data <- X_list[[1]]
