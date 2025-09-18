@@ -84,6 +84,7 @@ for (station in estaciones){
   # rm(list = c('X', 'X_final', 'mho', 'formula', 'p_day', 'station.p', 'station'))
 }
 
+saveRDS(X_list, 'X_list.rds')
 # estudio de covariables en los modelos
 ## ejemplo para EM71
 # mod <- get(paste0('mho.', estaciones[1]))
