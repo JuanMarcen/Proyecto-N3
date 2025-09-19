@@ -92,6 +92,7 @@ era5 <- cbind(readRDS('datos_elsa/t500.rds'), readRDS('datos_elsa/t700.rds'))
 # Convert ERA5 geopotentials into geopotential height
 #era5 <- era5[-which(format(era5$Date, '%m-%d') == '02-29'), ]
 era5_vars <- grep("t",names(era5))
+era5_vars <- era5_vars[-1]
 era5[,era5_vars] <- era5[,era5_vars] - 273.15 #temp in ºC
 names(era5)[era5_vars] <- paste0("z",names(era5)[era5_vars])
 
@@ -111,7 +112,7 @@ tdf <- data.frame(STAID = rep(stations$STAID, each = nrow(era5)),
                   grid = rep(stations$Grid, each = nrow(era5)))
 
 # Variable names
-eralevels <- paste0("tg",c("300", "500","700"))
+eralevels <- paste0("zt",c( "500","700"))
 # Corner points
 cpoints.4 <- c("42N.2W", "42N.1W", "41N.2W", "41N.1W")
 # Define variable names
@@ -150,7 +151,7 @@ tdf <- cbind(tdf,gmat)
 
 tdf <- tdf[tdf$date >= ref_period[1] & tdf$date <= ref_period[2], ]
 
-global_df <- cbind(gdf, tdf[, ])
+global_df <- cbind(gdf, tdf[, c(8:ncol(tdf))])
 # Write data.frame
 saveRDS(object = global_df,
         file = "global_df.rds")
