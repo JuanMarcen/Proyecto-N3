@@ -15,12 +15,12 @@ cpoints.4 <- c("42N.2W", "42N.1W", "41N.2W", "41N.1W")
 tpoints <- unique(c(cpoints,unique(stations$Grid)))
 tpoints <- cpoints.4
 # Reference period
-ref_period <- c("1997-01-01","2023-12-31")
+ref_period <- c("1997-10-01","2023-12-31")
 
 # Read grid data
-era5 <- cbind(readRDS("g300.rds"), readRDS('g500.rds'), readRDS('g700.rds'))
+era5 <- cbind(readRDS("datos_elsa/g300.rds"), readRDS('datos_elsa/g500.rds'), readRDS('datos_elsa/g700.rds'))
 # Convert ERA5 geopotentials into geopotential height
-era5 <- era5[-which(format(era5$Date, '%m-%d') == '02-29'), ]
+#era5 <- era5[-which(format(era5$Date, '%m-%d') == '02-29'), ]
 era5_vars <- grep("g",names(era5))
 era5[,era5_vars] <- era5[,era5_vars]/9.80665
 names(era5)[era5_vars] <- paste0("z",names(era5)[era5_vars])
@@ -46,7 +46,7 @@ eralevels <- paste0("zg",c("300", "500","700"))
 cpoints <- c("45N.10W","45N.5E","35N.10W","35N.5E")
 cpoints.4 <- c("42N.2W", "42N.1W", "41N.2W", "41N.1W")
 # Define variable names
-vnames <- paste(rep(eralevels, length(cpoints)+1),
+vnames <- paste(rep(eralevels, length(cpoints.4)+1),
                 rep(c("",cpoints.4),each = length(eralevels)),
                 sep = ".")
 
@@ -67,7 +67,7 @@ for(ss in 1:nrow(stations)){
   cidx2 <- nrow(era5)*ss
   
   # Include variables of interest
-  fivep <- c(stations$Grid[ss], cpoints)
+  fivep <- c(stations$Grid[ss], cpoints.4)
   eranames <- paste(rep(eralevels, length(fivep)),
                     rep(fivep, each = length(eralevels)),
                     sep = ".")
@@ -79,6 +79,7 @@ for(ss in 1:nrow(stations)){
 # Combine global data.frame with ERA5 variables
 gdf <- cbind(gdf,gmat)
 
+gdf <- gdf[gdf$date >= ref_period[1] & gdf$date <= ref_period[2], ]
 # Write data.frame
 saveRDS(object = gdf,
         file = "global_df.rds")
