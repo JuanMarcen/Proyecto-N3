@@ -7,6 +7,8 @@ load('data.RData')
 # In the covariates matrix we add the climate variables
 global_df <- readRDS('global_df.rds')
 global_df$t <- year(global_df$date)
+global_df <- global_df[, -which(colnames(global_df) %in% c('zg300.', 'zg500.', 'zg700.', 
+                                                           'zt500.', 'zt700.'))]
 
 #example 1 station
 cs <- function(t,harmonics=1, total) {
@@ -54,5 +56,82 @@ X <- X %>%
   as.data.frame() %>%
   na.omit()
 
+formula <- as.formula(
+  paste('Y ~', paste(colnames(X)[7:ncol(X)], collapse = '+'))
+)
+
+mdo <- glm(formula, family = binomial(logit), data = X)
+
+harmonics.l <- list(
+  h1 = c('s.1.l', 'c.1.l'),
+  h2 = c('s.2.l', 'c.2.l'),
+  h3 = c('s.3.l', 'c.3.l'),
+  h4 = c('s.4.l', 'c.4.l')
+)
+
+mod_null <- glm(Y ~ 1, family = binomial(logit), data = X)
+
+step_rlog <- function(initial_model,
+                      data,
+                      vars,
+                      harmonics.l){ 
+  # argumentos:
+  # initial_model: modelo inicial (modelo nulo)
+  # data: datos a utilizar (contiene explicada y explicativas)
+  # vars: covariables no armónicas que se desean introducir en el modelo (char)
+  # incluidas siempre? pues al modelo initial 
+  # harmonics: lista de armónicos
+  
+  mod.aux <- initial_model
+  cat('Initial model ', deparse(formula(mod.aux)), '\n')
+  cat('AIC: ', AIC(mod.aux), '\n')
+  
+  #  asumimos que las covariables siempre son escogidas
+  if (!is.null(vars)) {
+    for (var in vars){
+      formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
+      mod.temp <- glm(formula.aux, data = data, family = binomial(link = "logit"))
+      
+      if (AIC(mod.temp) < AIC(mod.aux)){
+        cat('Added: ', var, '\n')
+        cat('AIC: ', AIC(mod.temp), '\n')
+        mod.aux <- mod.temp
+      }
+    }
+    
+  }
+  
+  
+  for (h in harmonics.l){
+    
+    formula.aux <- update(formula(mod.aux), paste(". ~ . +", paste(h, collapse = '+')))
+    
+    mod.temp <- glm(formula.aux, data = data, family = binomial(logit))
+    
+    if (AIC(mod.temp) < AIC(mod.aux)){
+      cat('Added: ',paste(h, collapse = '+'), '\n')
+      cat('AIC: ', AIC(mod.temp), '\n')
+      
+      mod.aux <- mod.temp
+    }else{
+      break
+    }
+  }
+  
+  
+  cat('\nFinal model: ', deparse(formula(mod.aux)), '\n')
+  cat('AIC: ', AIC(mod.aux), '\n\n')
+  
+  return(mod.aux)
+}
 
 
+basura <- step_rlog(mod_null,
+                    X,
+                    colnames(X)[7:ncol(X)],
+                    harmonics.l)
+
+library(gam)
+plot(gam(formula = as.formula(paste('Y ~ s(', colnames(X)[36], ')')), data = X))
+
+summary(basura)
