@@ -95,7 +95,10 @@ cols_id <- c('t', 'l' ,'mes' , 'dia.mes')
 df_days <- df_hours %>%
   group_by(across(all_of(cols_id))) %>%
   summarise(
-    across(all_of(cols_val), ~sum(.x, na.rm = TRUE)),
+    across(
+      all_of(cols_val), 
+      ~ if(mean(is.na(.x)) >= 0.25) NA_real_ else sum(.x, na.rm = TRUE)
+      ),
     .groups = 'drop'
   ) %>%
   as.data.frame()
