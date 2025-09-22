@@ -4,11 +4,12 @@ rm(list = ls())
 
 load('data.RData')
 
+library(lubridate)
 # In the covariates matrix we add the climate variables
 global_df <- readRDS('global_df.rds')
 global_df$t <- year(global_df$date)
 global_df <- global_df[, -which(colnames(global_df) %in% c('zg300.', 'zg500.', 'zg700.', 
-                                                           'zt500.', 'zt700.'))]
+                                                           'zt300.', 'zt500.', 'zt700.'))]
 
 #example 1 station
 cs <- function(t,harmonics=1, total) {
@@ -35,41 +36,37 @@ library(dplyr)
 df_days <- df_days %>%
   left_join(harm_l, by = 'l') 
 
-station <- estaciones[1]
-station.p <- paste0(station, '.p')
+#----Data building----
+X_list <- list()
+for (station in estaciones){
+  station.p <- paste0(station, '.p')
+  
+  X <- df_days[, c('t', 'l', 'mes', 'dia.mes', station.p,
+                   colnames(harm_l)[2:ncol(harm_l)])]
+  
+  # lags
+  X <- X %>% 
+    mutate(!!paste0(station.p, '.lag') := lag(.data[[station.p]])) %>%
+    na.omit()
+  
+  X <- X %>%
+    left_join(global_df[global_df$STAID == station, c(3,4,8:ncol(global_df))],
+              by =c('t','l'))
+  
+  X_list[[station]] <- X %>% 
+    mutate(Y = ifelse(.data[[station.p]] > 0, 1, 0)) %>%
+    relocate(Y, .after = !!station.p) %>%
+    as.data.frame() %>%
+    na.omit()
+}
 
-X <- df_days[, c('t', 'l', 'mes', 'dia.mes', station.p,
-                       colnames(harm_l)[2:ncol(harm_l)])]
-
-# lags
-X <- X %>% 
-  mutate(!!paste0(station.p, '.lag') := lag(.data[[station.p]])) %>%
-  na.omit()
-
-X <- X %>%
-  left_join(global_df[global_df$STAID == station, c(3,4,8:ncol(global_df))],
-            by =c('t','l'))
-
-X <- X %>% 
-  mutate(Y = ifelse(.data[[station.p]] > 0, 1, 0)) %>%
-  relocate(Y, .after = !!station.p) %>%
-  as.data.frame() %>%
-  na.omit()
-
-formula <- as.formula(
-  paste('Y ~', paste(colnames(X)[7:ncol(X)], collapse = '+'))
-)
-
-mdo <- glm(formula, family = binomial(logit), data = X)
-
+#----Variable selection----
 harmonics.l <- list(
   h1 = c('s.1.l', 'c.1.l'),
   h2 = c('s.2.l', 'c.2.l'),
   h3 = c('s.3.l', 'c.3.l'),
   h4 = c('s.4.l', 'c.4.l')
 )
-
-mod_null <- glm(Y ~ 1, family = binomial(logit), data = X)
 
 step_rlog <- function(initial_model,
                       data,
@@ -125,13 +122,123 @@ step_rlog <- function(initial_model,
   return(mod.aux)
 }
 
+mdo_list <- list()
+for (station in estaciones){
+  cat('Estación: ',station, '\n\n')
+  
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = X_list[[station]])
+  
+  mdo_list[[station]] <- step_rlog(mod_null,
+                                   X_list[[station]],
+                                   colnames(X_list[[station]])[15:ncol(X)],
+                                   harmonics.l)
+  
+  
+}
 
-basura <- step_rlog(mod_null,
-                    X,
-                    colnames(X)[7:ncol(X)],
-                    harmonics.l)
+#guardado en otro data frame
+MDO <- list()
+for (station in estaciones){
+  MDO[[station]][['mdo']] <- mdo_list[[station]]
+  MDO[[station]][['vars']] <- mdo_list[[station]]$coefficients
+  MDO[[station]][['X']] <- X_list[[station]]
+} 
+
 
 library(gam)
 plot(gam(formula = as.formula(paste('Y ~ s(', colnames(X)[36], ')')), data = X))
 
-summary(basura)
+#----Comunalidades---
+stations <- readRDS('stations.rds')
+stations.no.ateca <- stations[-nrow(stations), ]
+
+vars <- list()
+for (station in estaciones){
+  vars[['todas']][[station]] <- names(MDO[[station]]$vars)
+}
+
+for (grupo in unique(stations.no.ateca$color)){
+  
+  aux <- stations[stations$color == grupo, 'STAID']
+  
+  for (station in aux){
+    vars[[grupo]][[station]] <- names(MDO[[station]]$vars)
+  }
+  
+  rm('aux')
+}
+
+#todas
+common <- Reduce(intersect, vars[['todas']])
+common.medio.ebro <- Reduce(intersect, vars[['blue']])
+common.alto.jalon <- Reduce(intersect, vars[['forestgreen']])
+common.bajo.jalon <- Reduce(intersect, vars[['red']])
+
+#df de valores de los coeficientes
+df.common <- data.frame(matrix(NA, nrow = length(common)))
+colnames(df.common) <- 'var'
+df.common$var <- common
+
+for (station in estaciones){
+  df.common[[station]] <- MDO[[station]]$vars[common]
+}
+
+for (var in common){
+  aux <- t(df.common[df.common$var == var, -1])
+  plot(aux, type = 'b', 
+       xaxt = 'n', 
+       xlab = '', 
+       ylab = 'Value', 
+       main = paste('Valor coeficiente', var))
+  axis(1, at = 1:length(estaciones), labels = estaciones, las = 2)
+}
+rownames(aux)
+
+#distance matrix
+require(factoextra)
+for (var in common){
+  dist <- dist(t(df.common[df.common$var == var, -1]), method = 'euclidean')
+  g <- fviz_dist(dist, show_labels = TRUE, order = TRUE) +
+    ggtitle(paste('Diferencia del valor de', var))
+  print(g)
+}
+
+#numerical summaries
+for (var in common){
+  cat('Resumen númerico ', var, ':\n', 
+      t(summary(t(df.common[df.common$var == var, -1]))), '\n\n')
+}
+
+
+# clustering entre coeficientes, sin tener en cuanta laz zonas predefinidas
+
+#----Evalutation of goodness of fit----
+library(pROC)
+
+for (station in estaciones){
+  mdo <- mdo_list[[station]]
+  X <- X_list[[station]]
+  
+  summary(mdo)
+  
+  boxplot(mdo$fitted.values ~ X$Y,
+          xlab = 'Y real',
+          ylab = 'P(Y = 1| X)',
+          main = station)
+  
+  pred <- predict(mdo, type = 'response')
+  roc <- roc(X$Y, pred)
+  plot(roc, col="blue", main = paste('Curva ROC', station), 
+       print.thres = T,
+       print.auc = T)
+  
+  thres <- coords(roc, 'best')[1]
+  
+  pred_class <- ifelse(pred > thres, 1, 0)
+  table <- table(Predicho = cut(pred,c(0,thres,1)), Real = X$Y)
+  
+  print(table)
+  
+  print(round(100*prop.table(table, 2)), 2)
+}
+

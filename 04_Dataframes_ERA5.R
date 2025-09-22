@@ -1,5 +1,3 @@
-#!/usr/bin/Rscript
-
 # Clear workspace
 rm(list = ls())
 
@@ -89,7 +87,7 @@ cpoints.4 <- c("42N.2W", "42N.1W", "41N.2W", "41N.1W")
 tpoints <- cpoints.4
 # Reference period
 # Read grid data
-era5 <- cbind(readRDS('datos_elsa/t500.rds'), readRDS('datos_elsa/t700.rds'))
+era5 <- cbind(readRDS('datos_elsa/t300.rds'), readRDS('datos_elsa/t500.rds'), readRDS('datos_elsa/t700.rds'))
 # Convert ERA5 geopotentials into geopotential height
 #era5 <- era5[-which(format(era5$Date, '%m-%d') == '02-29'), ]
 era5_vars <- grep("t",names(era5))
@@ -113,7 +111,7 @@ tdf <- data.frame(STAID = rep(stations$STAID, each = nrow(era5)),
                   grid = rep(stations$Grid, each = nrow(era5)))
 
 # Variable names
-eralevels <- paste0("zt",c( "500","700"))
+eralevels <- paste0("zt", c("300", "500", "700"))
 # Corner points
 cpoints.4 <- c("42N.2W", "42N.1W", "41N.2W", "41N.1W")
 # Define variable names

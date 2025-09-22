@@ -87,6 +87,7 @@ saveRDS(g700, "datos_elsa/g700.rds")
 rm(list = ls())
 lon <- readRDS("datos_elsa/lon_t.rds")
 lat <- readRDS("datos_elsa/lat_t.rds")
+t_300_12pm_60_23 <- readRDS("datos_elsa/t_300_12pm_60_23.rds")
 t_500_12pm_60_23 <- readRDS("datos_elsa/t_500_12pm_60_23.rds")
 t_700_12pm_60_23 <- readRDS("datos_elsa/t_700_12pm_60_23.rds")
 Date <- readRDS("datos_elsa/Date_t.rds")
@@ -99,7 +100,7 @@ ind <- which(format(Date1, '%m-%d') != '02-29')
 Date <- Date1[ind]
 lat <- lat[ind]
 lon <- lon[ind]
-#t300 <- t_300_12pm_60_23[ind]
+t300 <- t_300_12pm_60_23[ind]
 t500 <- t_500_12pm_60_23[ind]
 t700 <- t_700_12pm_60_23[ind]
 
@@ -116,17 +117,17 @@ orden_estaciones <- unique(coord$station)
 head(orden_estaciones)
 
 #t300
-# t300 <- data.frame(Date = Date, lat = lat, lon = lon, t300 = t300)
-# t300$station <- paste0(round(t300$lat),"N.",abs(round(t300$lon)),ifelse(t300$lon>-0.5,"E","W"))
-# t300$lat<-NULL
-# t300$lon<-NULL
-# 
-# # Convertir el data frame de largo a ancho
-# t300 <- reshape(t300, 
-#                 idvar = "Date", 
-#                 timevar = "station", 
-#                 direction = "wide")
-# 
+t300 <- data.frame(Date = Date, lat = lat, lon = lon, t300 = t300)
+t300$station <- paste0(round(t300$lat),"N.",abs(round(t300$lon)),ifelse(t300$lon>-0.5,"E","W"))
+t300$lat<-NULL
+t300$lon<-NULL
+
+# Convertir el data frame de largo a ancho
+t300 <- reshape(t300,
+                idvar = "Date",
+                timevar = "station",
+                direction = "wide")
+
 
 
 #t500
@@ -158,6 +159,6 @@ t700 <- reshape(t700,
 
 
 saveRDS(coord, "datos_elsa/coord_t.rds")
-#saveRDS(t300, "datos_elsa/t300.rds")
+saveRDS(t300, "datos_elsa/t300.rds")
 saveRDS(t500, "datos_elsa/t500.rds")
 saveRDS(t700, "datos_elsa/t700.rds")
