@@ -207,7 +207,7 @@ graph.col.df(estaciones, 'df.h.desc.', 'q0.99', 'Cuantil 0.99 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'max', 'Máximo mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'f.rel.0', 'Freq.rel.0 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'shape.mle', 'Parámetro de forma mensual', cols)
-graph.col.df(estaciones, 'df.h.desc.', 'coef.var.mle', 'Coeficiente de variación mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'coef.var', 'Coeficiente de variación mensual', cols)
 
 graph.col.df(estaciones, 'df.h.desc.h.', 'coef.var.mle', 'Coeficiente de variación horario', cols, tipo = 'h')
 
@@ -296,7 +296,7 @@ stations$grupo.q0.95 <- factor(c(clust.q0.95, 0))
 stations$grupo.q0.99 <- factor(c(clust.q0.99, 0))
 stations$grupo.max <- factor(c(clust.max, 0))
 
-# dibujar en mapa esto
+# dibujar en mapa esto (DE ESTO NO HAY NADA EN EL EXPLORATORIO)
 library(ggplot2)
 library(sf)
 library(sp)
@@ -344,6 +344,9 @@ corrplot(cor(df.f.rel.0[, c(2:ncol(df.f.rel.0))], method = 'pearson'),
          method = 'shade',
          order = 'hclust',
          hclust.method = 'centroid')
+
+#----Coef.var según altitud (equivalente a decir por estación)----
+
 
 #----NA's analysis----
 # Absolute frequency of missing data per month and year 

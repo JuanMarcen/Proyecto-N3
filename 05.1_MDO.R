@@ -144,9 +144,10 @@ for (station in estaciones){
   MDO[[station]][['X']] <- X_list[[station]]
 } 
 
+saveRDS(MDO, 'MDO.rds')
 
 library(gam)
-plot(gam(formula = as.formula(paste('Y ~ s(', colnames(X)[36], ')')), data = X))
+plot(gam(formula = as.formula(paste('Y ~ s(', colnames(X_list[[station]])[36], ')')), data = X))
 
 #----Comunalidades---
 stations <- readRDS('stations.rds')
@@ -175,42 +176,74 @@ common.alto.jalon <- Reduce(intersect, vars[['forestgreen']])
 common.bajo.jalon <- Reduce(intersect, vars[['red']])
 
 #df de valores de los coeficientes
-df.common <- data.frame(matrix(NA, nrow = length(common)))
-colnames(df.common) <- 'var'
-df.common$var <- common
-
-for (station in estaciones){
-  df.common[[station]] <- MDO[[station]]$vars[common]
+df.common <- function(common.vars, group = NULL){
+  df <- data.frame(matrix(NA, nrow = length(common.vars)))
+  colnames(df) <- 'var'
+  df$var <- common.vars
+  
+  if(!is.null(group)){
+    for (station in stations$STAID[stations$color == group]){
+      df[[station]] <- MDO[[station]]$vars[common.vars]
+    }
+  }else{
+    for (station in estaciones){
+      df[[station]] <- MDO[[station]]$vars[common.vars]
+    }
+  }
+  
+  return(df)
 }
 
-for (var in common){
-  aux <- t(df.common[df.common$var == var, -1])
-  plot(aux, type = 'b', 
-       xaxt = 'n', 
-       xlab = '', 
-       ylab = 'Value', 
-       main = paste('Valor coeficiente', var))
-  axis(1, at = 1:length(estaciones), labels = estaciones, las = 2)
-}
-rownames(aux)
+df.common.todas <- df.common(common, group = NULL)
+df.common.medio.ebro <- df.common(common.medio.ebro, 'blue')
+df.common.alto.jalon <- df.common(common.alto.jalon, 'forestgreen')
+df.common.bajo.jalon <- df.common(common.bajo.jalon, 'red')
+
+#not very useful
+# for (var in common){
+#   aux <- t(df.common[df.common$var == var, -1])
+#   plot(aux, type = 'b', 
+#        xaxt = 'n', 
+#        xlab = '', 
+#        ylab = 'Value', 
+#        main = paste('Valor coeficiente', var))
+#   axis(1, at = 1:length(estaciones), labels = estaciones, las = 2)
+# }
+# rownames(aux)
 
 #distance matrix
 require(factoextra)
-for (var in common){
-  dist <- dist(t(df.common[df.common$var == var, -1]), method = 'euclidean')
-  g <- fviz_dist(dist, show_labels = TRUE, order = TRUE) +
-    ggtitle(paste('Diferencia del valor de', var))
-  print(g)
+dist.plots <- function(df, common.vars){
+  for (var in common.vars){
+    dist <- dist(t(df[df[['var']] == var, -1]), method = 'euclidean')
+    g <- fviz_dist(dist, show_labels = TRUE, order = TRUE) +
+      ggtitle(paste('Diferencia del valor de', var))
+    print(g)
+  }
 }
 
+dist.plots(df.common.todas, common)
+dist.plots(df.common.medio.ebro, common.medio.ebro)
+dist.plots(df.common.alto.jalon, common.alto.jalon)
+dist.plots(df.common.bajo.jalon, common.bajo.jalon)
+
 #numerical summaries
-for (var in common){
-  cat('Resumen númerico ', var, ':\n', 
-      t(summary(t(df.common[df.common$var == var, -1]))), '\n\n')
+num.sum <- function(df, common.vars){
+  for (var in common.vars){
+    cat('Resumen númerico ', var, ':\n', 
+        t(summary(t(df[df[['var']] == var, -1]))), '\n\n')
+  }
+  
 }
+
+num.sum(df.common.todas, common)
+num.sum(df.common.medio.ebro, common.medio.ebro)
+num.sum(df.common.alto.jalon, common.alto.jalon)
+num.sum(df.common.bajo.jalon, common.bajo.jalon)
 
 
 # clustering entre coeficientes, sin tener en cuanta laz zonas predefinidas
+
 
 #----Evalutation of goodness of fit----
 library(pROC)

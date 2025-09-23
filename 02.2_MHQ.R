@@ -299,7 +299,7 @@ media_mensual <- tapply(1/fit$sigma.fv^2, INDEX = X_final$mes, mean)
 plot(media_mensual, type = 'l')
 
 for (station in estaciones){
-  station.p <- paste0(station, '.p')
+ station.p <- paste0(station, '.p')
   shape <- 1 / mhq_list[[station]]$sigma.fv^2
   rate <- shape / mhq_list[[station]]$mu.fv
   
@@ -307,9 +307,17 @@ for (station in estaciones){
   lines(density(X_list[[station]][, station.p]), col = 'blue')
   y_sim <- rgamma(length(shape), shape = shape, rate = rate)
   lines(density(y_sim), col = 'red', lwd = 2)
-}
+ }
 
-
+station <- estaciones[12]
+station.p <- paste0(station, '.p')
+shape <- 1 / mhq_list[[station]]$sigma.fv^2
+rate <- shape / mhq_list[[station]]$mu.fv
+plot(shape, type = 'l')
+hist(X_list[[station]][, station.p], breaks = 50, prob = T, main = station)
+lines(density(X_list[[station]][, station.p]), col = 'blue')
+y_sim <- rgamma(length(shape), shape = shape, rate = rate)
+lines(density(y_sim), col = 'red', lwd = 2)
 #------
 
 # chat ? 
