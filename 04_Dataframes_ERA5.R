@@ -3,7 +3,6 @@ rm(list = ls())
 
 # Read stations information
 stations <- readRDS("stations.rds")
-stations <- stations[-nrow(stations), ]
 stations$Grid <- paste0(round(stations$LAT),"N.",abs(round(stations$LON)),ifelse(stations$LON>-0.5,"E","W"))
 
 # Target grid points

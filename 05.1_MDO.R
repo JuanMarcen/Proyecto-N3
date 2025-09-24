@@ -11,7 +11,15 @@ global_df$t <- year(global_df$date)
 global_df <- global_df[, -which(colnames(global_df) %in% c('zg300.', 'zg500.', 'zg700.', 
                                                            'zt300.', 'zt500.', 'zt700.'))]
 
-#example 1 station
+# cálculo de periodo comun
+n <- length(estaciones)
+aux <- apply(df_days[, paste0(estaciones, '.p')], 1, function(row) all(!is.na(row)))
+
+first <- which(aux)[1]
+last <- tail(which(aux), 1)
+date.first <- as.Date(paste0(df_days[first, c('dia.mes', 'mes', 't')], collapse = '-'), format = '%d-%m-%Y')
+date.last <- as.Date(paste0(df_days[last, c('dia.mes', 'mes', 't')], collapse = '-'), format = '%d-%m-%Y')
+
 cs <- function(t,harmonics=1, total) {
   # if(min(t) <0 | max(t) > 1){ stop(" t must be in [0,1] range")}
   if(min(harmonics) <1){stop("harmonics > = 1")}
@@ -38,6 +46,9 @@ df_days <- df_days %>%
 
 #----Data building----
 X_list <- list()
+M1_list <- list()
+M2_list <- list()
+M3_list <- list()
 for (station in estaciones){
   station.p <- paste0(station, '.p')
   
@@ -58,6 +69,26 @@ for (station in estaciones){
     relocate(Y, .after = !!station.p) %>%
     as.data.frame() %>%
     na.omit()
+  
+  formula_M1 <- as.formula(paste('Y ~', paste(c(colnames(harm_l)[2:ncol(harm_l)]),
+                                              collapse = '+')))
+  formula_M2 <- as.formula(paste('Y ~', paste(
+    colnames(X_list[[station]])[15:ncol(X_list[[station]])], collapse = '+'
+  )))
+  
+  formula_M3 <- as.formula(
+    paste('Y ~', paste(
+      colnames(X_list[[station]])[7:ncol(X_list[[station]])], collapse = '+')
+  ))
+  
+  cat('Ajuste modelo M1: ', deparse(formula_M1), '\n')
+  M1_list[[station]] <- glm(formula = formula_M1, family = binomial(logit), data = X_list[[station]])
+  
+  cat('Ajuste modelo M2: ', deparse(formula_M2), '\n')
+  M2_list[[station]] <- glm(formula = formula_M2, family = binomial(logit), data = X_list[[station]])
+  
+  cat('Ajuste modelo M3: ', deparse(formula_M3), '\n')
+  M3_list[[station]] <- glm(formula = formula_M3, family = binomial(logit), data = X_list[[station]])
 }
 
 #----Variable selection----
@@ -122,13 +153,13 @@ step_rlog <- function(initial_model,
   return(mod.aux)
 }
 
-mdo_list <- list()
+M4_list <- list()
 for (station in estaciones){
   cat('Estación: ',station, '\n\n')
   
   mod_null <- glm(Y ~ 1, family = binomial(logit), data = X_list[[station]])
   
-  mdo_list[[station]] <- step_rlog(mod_null,
+  M4_list[[station]] <- step_rlog(mod_null,
                                    X_list[[station]],
                                    colnames(X_list[[station]])[15:ncol(X)],
                                    harmonics.l)
@@ -139,13 +170,23 @@ for (station in estaciones){
 #guardado en otro data frame
 MDO <- list()
 for (station in estaciones){
-  MDO[[station]][['mdo']] <- mdo_list[[station]]
-  MDO[[station]][['vars']] <- mdo_list[[station]]$coefficients
+  MDO[[station]][['M1']] <- M1_list[[station]]
+  MDO[[station]][['vars.M1']] <- M1_list[[station]]$coefficients
+  MDO[[station]][['M2']] <- M2_list[[station]]
+  MDO[[station]][['vars.M2']] <- M2_list[[station]]$coefficients
+  MDO[[station]][['M3']] <- M3_list[[station]]
+  MDO[[station]][['vars.M3']] <- M3_list[[station]]$coefficients
+  MDO[[station]][['M3']] <- M3_list[[station]]
+  MDO[[station]][['vars.M3']] <- M3_list[[station]]$coefficients
+  MDO[[station]][['M4']] <- M4_list[[station]]
+  MDO[[station]][['vars.M4']] <- M4_list[[station]]$coefficients
   MDO[[station]][['X']] <- X_list[[station]]
 } 
 
 saveRDS(MDO, 'MDO.rds')
+MDO <- readRDS('MDO.rds')
 
+# M5 Y M6 ....
 library(gam)
 plot(gam(formula = as.formula(paste('Y ~ s(', colnames(X_list[[station]])[36], ')')), data = X))
 
@@ -275,3 +316,124 @@ for (station in estaciones){
   print(round(100*prop.table(table, 2)), 2)
 }
 
+#plot all AUC and Roc curves: Comparison of models
+auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 5))
+colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4')
+rownames(auc.df) <- estaciones
+auc.df$station <- estaciones
+
+auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 5))
+colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4')
+rownames(auc.df.pc) <- estaciones
+auc.df.pc$station <- estaciones
+
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 5))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4')
+rownames(AIC.df) <- estaciones
+AIC.df$station <- estaciones
+
+for (station in estaciones){
+  M1 <- MDO[[station]]$M1
+  M2 <- MDO[[station]]$M2
+  M3 <- MDO[[station]]$M3
+  M4 <- MDO[[station]]$M4
+  # M5 <- MDO[[station]]$M5
+  # M6 <- MDO[[station]]$M6
+  X <- MDO[[station]]$X
+  
+  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = "%Y-%m-%d")
+  ind <- which(X$date >= date.first & X$date <= date.last)
+  X_pc <- X[ind, ]
+  
+  #cat(dim(X_pc)[1], '\n')
+  
+  roc_M1 <- roc(X$Y, predict(M1, type = 'response'))
+  roc_M2 <- roc(X$Y, predict(M2, type = 'response'))
+  roc_M3 <- roc(X$Y, predict(M3, type = 'response'))
+  roc_M4 <- roc(X$Y, predict(M4, type = 'response'))
+  # roc_M5 <- roc(X$Y, predict(M5, type = 'response'))
+  # roc_M6 <- roc(X$Y, predict(M6, type = 'response'))
+  
+  roc_M1.pc <- roc(X$Y[ind], M1$fitted.values[ind])
+  roc_M2.pc <- roc(X$Y[ind], M2$fitted.values[ind])
+  roc_M3.pc <- roc(X$Y[ind], M3$fitted.values[ind])
+  roc_M4.pc <- roc(X$Y[ind], M4$fitted.values[ind])
+  # roc_M5.pc <- roc(X$Y[ind], M5$fitted.values[ind])
+  # roc_M6.pc <- roc(X$Y[ind], M6$fitted.values[ind])
+  
+  auc.df[station, 2:7] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
+                                  auc(roc_M4), auc(roc_M5), auc(roc_M6)), 3)
+  auc.df.pc[station, 2:7] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
+                                     auc(roc_M4.pc), auc(roc_M5.pc), auc(roc_M6.pc)), 3)
+  AIC.df[station, 2:7] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+                                  AIC(M4), AIC(M5), AIC(M6)), 2)
+  # BIC.df[station, 2:7] <- round(c(BIC(M1), BIC(M2), BIC(M3), 
+  #                                 BIC(M4), BIC(M5), BIC(M6)), 2)
+}
+# library(writexl)
+# write_xlsx(AIC.df, "borrar.xlsx")
+
+library(ggplot2)
+library(reshape2)
+
+mapa_calor <- function(df, tipo = c("AUC", "AIC")) {
+  tipo <- match.arg(tipo)  # Forzar que sea uno de los dos
+  
+  # Pasar a formato largo
+  df_long <- melt(df, id.vars = "station")
+  
+  if (tipo == "AUC") {
+    # Escalado global entre 0.5 y 1
+    ggplot(df_long, aes(x = variable, y = station, fill = value)) +
+      geom_tile(color = "white") +
+      geom_text(aes(label = round(value, 3)), size = 5) +
+      scale_fill_gradientn(
+        colors = c("blue", "lightblue", "orange", "red"),
+        limits = c(min(df[, -1]),max(df[, -1])),
+        name = "AUC"
+      ) +
+      theme_minimal() +
+      theme(
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank()
+      )
+    
+  } else if (tipo == "AIC") {
+    # 1️⃣ Relativizar cada fila con respecto a la primera columna
+    df_rel <- df
+    for (i in 1:nrow(df)) {
+      df_rel[i, -1] <- df[i, -1] / df[i, 2]
+    }
+    
+    df_long <- melt(df_rel, id.vars = "station")
+    
+    # 2️⃣ Calcular valores normalizados por fila solo para la escala de color
+    df_long <- df_long %>%
+      group_by(station) %>%
+      mutate(color_val = (value - min(value)) / (max(value) - min(value))) %>%
+      ungroup()
+    
+    # 3️⃣ Graficar usando color_val para el gradiente y value para el texto
+    ggplot(df_long, aes(x = variable, y = station, fill = color_val)) +
+      geom_tile(color = "white") +
+      geom_text(aes(label = round(value, 3)), size = 5) +
+      scale_fill_gradientn(
+        colors = c("#277DF5", "white", "red"),
+        name = "BIC relativo\npor fila",
+        breaks = c(0, 0.5, 1),
+        labels = c("min", "", "max")
+      ) +
+      theme_minimal() +
+      theme(
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank()
+      )
+  }
+}
+
+mapa_calor(auc.df, tipo = 'AUC')
+mapa_calor(auc.df.pc, tipo = 'AUC')
+mapa_calor(AIC.df[, -5], tipo = 'AIC')
+mapa_calor(BIC.df[, -5], tipo = 'AIC')

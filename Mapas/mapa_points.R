@@ -51,6 +51,12 @@ cpoints <- data.frame(
   LON = c(-1, -1, -1, -1, 0, 0, 0, 0, -2, -2, -2, -2, -3, -3, -3, -3),
   LAT = rep(40:43, times = 4)
 )
+
+cpoints <- data.frame(
+  LON = c(-1, -1, -2, -2),
+  LAT = c(41, 42, 41, 42)
+)
+
 cpoints <- st_transform(
   as(
     SpatialPointsDataFrame(
@@ -114,12 +120,12 @@ map_zone <- ggplot(hypsobath) +
                     guide = guide_legend(reverse = TRUE)) +
   xlab("Longitud") + ylab("Latitud") +
   geom_point(aes(x = X, y = Y, color = stations$color), data = data.frame(st_coordinates(stations))) +
-  # geom_point(aes(x = X, y = Y),
-  #            data = data.frame(st_coordinates(cpoints)),
-  #            col = 'black',
-  #            size = 3, 
-  #            shape = 15) + 
-  ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations$STAID, color = stations$color), 
+  geom_point(aes(x = X, y = Y),
+             data = data.frame(st_coordinates(cpoints)),
+             col = 'black',
+             size = 3,
+             shape = 15) +
+  ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations$STAID, color = stations$color),
                             size = 3.5,
                             position = 'identity', label.size = 0.025,
                             max.time = 0.5, max.iter = 1000000, max.overlaps = 100,

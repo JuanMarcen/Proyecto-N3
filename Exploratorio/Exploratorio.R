@@ -6,7 +6,7 @@ stations <- readRDS('stations.rds')
 library(dplyr)
 
 #----Existence number of data months (hourly and 15')----
-par(mfrow = c(4,4))
+par(mfrow = c(7,4))
 aux.ind <- df_hours$t + (df_hours$mes - 0.5)/12
 
 aux.x <- tapply(aux.ind, aux.ind, mean )
@@ -157,7 +157,7 @@ dens.no.0 <- function(station, data){
     
   }
   
-  legend("topright", legend = c("Total", paste("Mes", 1:12)),
+  legend("topright", legend = c("Total", paste("mes", 1:12)),
          col = c("black", col_mes), lwd = 2)
 }
 
@@ -169,7 +169,7 @@ for (station in estaciones){
 # all together graphs of different columns of the previous
 # frequency of 0
 library(Polychrome)
-cols <- createPalette(16, c("#FF0000", "#0000FF", "#00FF00", "#FFFF00",
+cols <- createPalette(28, c("#FF0000", "#0000FF", "#00FF00", "#FFFF00",
                             '#FF00FF', '#FFA500', '#228B22', '#A020F0',
                             '#ADD8E6', '#EE82EE'))
 
@@ -207,7 +207,7 @@ graph.col.df(estaciones, 'df.h.desc.', 'q0.99', 'Cuantil 0.99 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'max', 'Máximo mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'f.rel.0', 'Freq.rel.0 mensual', cols)
 graph.col.df(estaciones, 'df.h.desc.', 'shape.mle', 'Parámetro de forma mensual', cols)
-graph.col.df(estaciones, 'df.h.desc.', 'coef.var', 'Coeficiente de variación mensual', cols)
+graph.col.df(estaciones, 'df.h.desc.', 'coef.var.mle', 'Coeficiente de variación mensual', cols)
 
 graph.col.df(estaciones, 'df.h.desc.h.', 'coef.var.mle', 'Coeficiente de variación horario', cols, tipo = 'h')
 
@@ -226,11 +226,11 @@ for (i in 1:length(estaciones)){
   df.h <- get(paste0('df.h.desc.', station))
   df.min <- get(paste0('df.min.desc.', station))
   
-  plot(df.h$Mes, df.h$max, type = 'b', pch = 19,
+  plot(df.h$mes, df.h$max, type = 'b', pch = 19,
        ylim = c(0, 60),
-       xlab = 'Mes', ylab = 'Máximo mensual', main = station,
+       xlab = 'mes', ylab = 'Máximo mensual', main = station,
        col = cols[i])
-  lines(df.min$Mes, df.min$max, type = 'b', pch = 19)
+  lines(df.min$mes, df.min$max, type = 'b', pch = 19)
   
   legend('topleft', legend = c('h', 'min'), 
          col = c(cols[i], 'black'), lwd = 2, 
@@ -245,7 +245,7 @@ load('Mapas/data_mapas.RData')
 df.stations.col <- function(stations, name.df, col){
   station <- stations[1]
   df.aux <- get(paste0(name.df, station))
-  df.aux <- df.aux[, c('Mes', col)]
+  df.aux <- df.aux[, c('mes', col)]
   colnames(df.aux)[2] <- paste0(colnames(df.aux)[2], '.', station)
   for (i in 2:length(stations)){
     df.aux.2 <- get(paste0(name.df, stations[i]))
@@ -354,7 +354,7 @@ corrplot(cor(df.f.rel.0[, c(2:ncol(df.f.rel.0))], method = 'pearson'),
 aux.ind <- df_minutes$t + (df_minutes$mes - 0.5)/12
 aux.x <- tapply(aux.ind, aux.ind, mean )
 
-par(mfrow = c(4,4))
+par(mfrow = c(7,4))
 for (station in estaciones){
   cont.na <- tapply(is.na(df_minutes[, paste0(station, '.p')]), aux.ind, sum)
   total <- tapply(df_minutes[, paste0(station, '.p')], aux.ind, length)
@@ -384,13 +384,15 @@ medias.lluvia.todos <- apply(df_hours[, paste0(estaciones, '.p')] > 0, 1, mean, 
 summary(medias.lluvia.todos)
 
 # medias
-medias.total <- apply(df_hours[, paste0(estaciones, '.p')], 1, mean, na.rm = T)
+medias.total <- apply(df_hours[, paste0(estaciones, '.p')], 1, mean, na.rm = F) 
+#na.rm = F obliga a mediciones en todas estaciones
 summary(medias.total[medias.total > 0])
-ev.medias <- sort(medias.total[medias.total> 0], decreasing = T)[1:5]
+ev.medias <- sort(medias.total[medias.total> 0], decreasing = T)[1:6] #6 porque dos son consecutivas
 aux.ind <- which(medias.total %in% ev.medias)
 aux.ind <- unique(unlist(lapply(aux.ind, function(i) {
   seq(max(1, i-2), min(nrow(df_hours), i+2))
 })))
+aux.ind <- aux.ind[-11]
 
 media.total.ev <- df_hours[aux.ind, ]
 aux.df[, c('t', 'mes', 'dia.mes', 'h')] <- media.total.ev[, c('t', 'mes', 'dia.mes', 'h')]
@@ -411,7 +413,7 @@ df.eventos <- rbind(df.eventos, aux.df)
 df.eventos <- df.eventos[-1, ]
 
 #maximos 
-max.total <- apply(df_hours[, paste0(estaciones, '.p')], 1, max, na.rm = T)
+max.total <- apply(df_hours[, paste0(estaciones, '.p')], 1, max, na.rm = F)
 summary(max.total[max.total > 0])
 ev.max <- sort(max.total[max.total> 0], decreasing = T)[1:5]
 aux.ind <- which(max.total %in% ev.max)
@@ -437,15 +439,13 @@ aux.df$station.max <- sapply(1:length(aux.df$max), function(i) {
 df.eventos <- rbind(df.eventos, aux.df)
 
 #pintar en mapa
-media.total.ev$A126.p <- rep(0, length.out = dim(media.total.ev)[1])
-max.total.ev$A126.p <- rep(0, length.out = dim(max.total.ev)[1])
 
 df.mapa <-  data.frame(
   st_coordinates(stations),
   STAID = stations$STAID
 )
-df.mapa <- cbind(df.mapa, t(media.total.ev[, c(paste0(estaciones, '.p'), 'A126.p')]),
-                 t(max.total.ev[, c(paste0(estaciones, '.p'), 'A126.p')]))
+df.mapa <- cbind(df.mapa, t(media.total.ev[, c(paste0(estaciones, '.p'))]),
+                 t(max.total.ev[, c(paste0(estaciones, '.p'))]))
 
 nombres <- c('ev.media-2h', 'ev.media-1h', 'ev.media', 'ev.media+1h', 'ev.media+2h')
 nombres.final <- c()
@@ -469,10 +469,12 @@ mapa.ind <- function(data, event.no, event.type , lag = ''){
   
   if (event.type == 'media'){
     fecha <- media.total.ev[(event.no * 5 - 1), c('dia.mes', 'mes', 't')]
+    h <- media.total.ev[(event.no * 5 - 1), c('h')]
   }
   
   if (event.type == 'max'){
     fecha <- max.total.ev[(event.no * 5 - 1), c('dia.mes', 'mes', 't')]
+    h <- max.total.ev[(event.no * 5 - 1), c('h')]
   }
   
   map_zone <- ggplot(hypsobath) +
@@ -493,13 +495,13 @@ mapa.ind <- function(data, event.no, event.type , lag = ''){
     scale_size_continuous(name = "Lluvia", 
                           limits = range(data[[event]], na.rm = TRUE)) +
     # NA
-    geom_point(aes(x = X, y = Y, 
-                   color = stations$color[is.na(data[[col]])]), 
-               data = data[is.na(data[[col]]), ], 
-               shape = 4, size = 2, stroke = 1.5) +
+    # geom_point(aes(x = X, y = Y, 
+    #                color = stations$color[is.na(data[[col]])]), 
+    #            data = data[is.na(data[[col]]), ], 
+    #            shape = 4, size = 2, stroke = 1.5) +
     
     ggrepel::geom_label_repel(aes(x = X, y = Y, 
-                                  label = stations$STAID, 
+                                  label = data[[col]], 
                                   color = stations$color), 
                               size = 3.5,
                               position = 'identity', label.size = 0.025,
@@ -508,7 +510,7 @@ mapa.ind <- function(data, event.no, event.type , lag = ''){
                               seed = 23) +
     
     scale_color_identity() +
-    ggtitle(label = paste(paste(fecha, collapse = '/'), lag))
+    ggtitle(label = paste0(paste(fecha, collapse = '/'), '-', h, 'h'))
   
   return(map_zone)
 }
@@ -535,7 +537,7 @@ ggsave(
   filename = "Mapas/ev.extremos/1.ev.media.png", 
   plot = mapa.ev(df.mapa, 1, 'media'), 
   width = 12*1.5,
-  height = 6*1.5,     
+  height = 6,     
   dpi = 300       
 )
 
@@ -543,7 +545,7 @@ ggsave(
   filename = "Mapas/ev.extremos/2.ev.media.png", 
   plot = mapa.ev(df.mapa, 2, 'media'), 
   width = 12*1.5,
-  height = 6*1.5,     
+  height = 6,     
   dpi = 300       
 )
 
@@ -551,7 +553,7 @@ ggsave(
   filename = "Mapas/ev.extremos/3.ev.media.png", 
   plot = mapa.ev(df.mapa, 3, 'media'), 
   width = 12*1.5,
-  height = 6*1.5,     
+  height = 6,     
   dpi = 300       
 )
 
@@ -559,7 +561,7 @@ ggsave(
   filename = "Mapas/ev.extremos/4.ev.media.png", 
   plot = mapa.ev(df.mapa, 4, 'media'), 
   width = 12*1.5,
-  height = 6*1.5,     
+  height = 6,     
   dpi = 300       
 )
 
@@ -567,7 +569,7 @@ ggsave(
   filename = "Mapas/ev.extremos/5.ev.media.png", 
   plot = mapa.ev(df.mapa, 5, 'media'), 
   width = 12*1.5,
-  height = 6*1.5,     
+  height = 6,     
   dpi = 300       
 )
 
@@ -575,7 +577,7 @@ ggsave(
   filename = "Mapas/ev.extremos/1.ev.max.png", 
   plot = mapa.ev(df.mapa, 1, 'max'), 
   width = 12*1.5,
-  height = 6*1.5,     
+  height = 6,     
   dpi = 300       
 )
 
@@ -583,7 +585,7 @@ ggsave(
   filename = "Mapas/ev.extremos/2.ev.max.png", 
   plot = mapa.ev(df.mapa, 2, 'max'), 
   width = 12*1.5,
-  height = 6*1.5,     
+  height = 6,     
   dpi = 300       
 )
 
@@ -591,7 +593,7 @@ ggsave(
   filename = "Mapas/ev.extremos/3.ev.max.png", 
   plot = mapa.ev(df.mapa, 3, 'max'), 
   width = 12*1.5,
-  height = 6*1.5,     
+  height = 6,     
   dpi = 300       
 )
 
@@ -599,7 +601,7 @@ ggsave(
   filename = "Mapas/ev.extremos/4.ev.max.png", 
   plot = mapa.ev(df.mapa, 4, 'max'), 
   width = 12*1.5,
-  height = 6*1.5,     
+  height = 6,     
   dpi = 300       
 )
 
@@ -607,44 +609,44 @@ ggsave(
   filename = "Mapas/ev.extremos/5.ev.max.png", 
   plot = mapa.ev(df.mapa, 5, 'max'), 
   width = 12*1.5,
-  height = 6*1.5,     
+  height = 6,     
   dpi = 300       
 )
 
 
-map_zone <- ggplot(hypsobath) +
-  geom_sf(aes(fill = val_inf), color = NA) +
-  geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
-  coord_sf(xlim = st_coordinates(limits)[,1], 
-           ylim = st_coordinates(limits)[,2]) + 
-  scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
-                    breaks = levels(hypsobath$val_inf),
-                    guide = guide_legend(reverse = TRUE)) +
-  xlab("Longitud") + ylab("Latitud") +
-  
-  geom_point(aes(x = X, y = Y, 
-                 size = media.val, 
-                 color = stations$color[!is.na(df.mapa$media.val)]), 
-             data = df.mapa[!is.na(df.mapa$media.val), ]) +
-  
-  geom_point(aes(x = X, y = Y, 
-                 color = stations$color[is.na(df.mapa$media.val)]), 
-             data = df.mapa[is.na(df.mapa$media.val), ], 
-             shape = 4, size = 2, stroke = 1.5) +
-  
-  ggrepel::geom_label_repel(aes(x = X, y = Y, 
-                                label = stations$STAID, 
-                                color = stations$color), 
-                            size = 3.5,
-                            position = 'identity', label.size = 0.025,
-                            max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
-                            data = df.mapa,
-                            seed = 23) +
-  
-  scale_color_identity() +
-  ggtitle(label = paste('Evento extremo'))
-
-map_zone
+# map_zone <- ggplot(hypsobath) +
+#   geom_sf(aes(fill = val_inf), color = NA) +
+#   geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
+#   coord_sf(xlim = st_coordinates(limits)[,1], 
+#            ylim = st_coordinates(limits)[,2]) + 
+#   scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
+#                     breaks = levels(hypsobath$val_inf),
+#                     guide = guide_legend(reverse = TRUE)) +
+#   xlab("Longitud") + ylab("Latitud") +
+#   
+#   geom_point(aes(x = X, y = Y, 
+#                  size = media.val, 
+#                  color = stations$color[!is.na(df.mapa$media.val)]), 
+#              data = df.mapa[!is.na(df.mapa$media.val), ]) +
+#   
+#   geom_point(aes(x = X, y = Y, 
+#                  color = stations$color[is.na(df.mapa$media.val)]), 
+#              data = df.mapa[is.na(df.mapa$media.val), ], 
+#              shape = 4, size = 2, stroke = 1.5) +
+#   
+#   ggrepel::geom_label_repel(aes(x = X, y = Y, 
+#                                 label = stations$STAID, 
+#                                 color = stations$color), 
+#                             size = 3.5,
+#                             position = 'identity', label.size = 0.025,
+#                             max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+#                             data = df.mapa,
+#                             seed = 23) +
+#   
+#   scale_color_identity() +
+#   ggtitle(label = paste('Evento extremo'))
+# 
+# map_zone
 
 
 #----Rachas----

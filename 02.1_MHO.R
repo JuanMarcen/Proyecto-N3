@@ -45,6 +45,7 @@ df_hours <- df_hours %>%
   left_join(harm_l, by = 'l') %>%
   left_join(harm_h, by = 'h')
 
+
 # creation of final X matrix -- Generalize
 # for all stations
 # Saving design matrix (X) and models M1, M2 and M3
@@ -110,32 +111,43 @@ for (station in estaciones){
   # rm(list = c('X', 'X_final', 'mho', 'formula', 'p_day', 'station.p', 'station'))
 }
 
-saveRDS(X_list, 'X_list.rds')
+MHO <- list()
+for (station in estaciones){
+  MHO[[station]][['M1']] <- M1_list[[station]]
+  MHO[[station]][['vars.M1']] <- M1_list[[station]]$coefficients
+  MHO[[station]][['M2']] <- M2_list[[station]]
+  MHO[[station]][['vars.M2']] <- M2_list[[station]]$coefficients
+  MHO[[station]][['M3']] <- M3_list[[station]]
+  MHO[[station]][['vars.M3']] <- M3_list[[station]]$coefficients
+  MHO[[station]][['X']] <- X_list[[station]]
+}
+
+rm(list = c('M1_list', 'M2_list', 'M3_list', 'X_list', 'harm_h', 'harm_l', 'X_final', 'X', 'p_day'))
 # estudio de covariables en los modelos
 ## ejemplo para EM71
 # mod <- get(paste0('mho.', estaciones[1]))
 # X <- get(paste0('X.', estaciones[1]))
-mod <- mho_list[[estaciones[15]]]
-X <- X_list[[estaciones[15]]]
-mod_rebuilt <- glm(formula = formula(mod), family = binomial(link = "logit"), data = X)
-step(mod_rebuilt, direction = "backward")
-
-
-#borrador
-basura <- update(mod, data = X, formula = .~. - P024.p.lag:P024.p.day)
-basura <- update(mho.EM71, data = X.EM71, formula = .~. + 
-                   poly(EM71.p.day, 2) + poly(EM71.p.lag, 2))
+# mod <- mho_list[[estaciones[15]]]
+# X <- X_list[[estaciones[15]]]
+# mod_rebuilt <- glm(formula = formula(mod), family = binomial(link = "logit"), data = X)
+# step(mod_rebuilt, direction = "backward")
+# 
+# 
+# #borrador
+# basura <- update(mod, data = X, formula = .~. - P024.p.lag:P024.p.day)
+# basura <- update(mho.EM71, data = X.EM71, formula = .~. + 
+#                    poly(EM71.p.day, 2) + poly(EM71.p.lag, 2))
 
 library(gam)
-aux.marcador <- is.element(X$mes, c(6,7,8)) #meses de mayor lluvia al parecer
-mod1 <- gam(formula = as.formula('Y ~ s(EM71.p.day)'), data = X[aux.marcador, ])
-summary(mod1)
-plot(gam(formula = as.formula('Y ~ s(EM71.p.day)'), data = X[aux.marcador, ]))
-plot(gam(formula = as.formula('Y ~ s(EM71.p.lag, df = 3)'), data = X[aux.marcador, ]))
+# aux.marcador <- is.element(X$mes, c(6,7,8)) #meses de mayor lluvia al parecer
+# mod1 <- gam(formula = as.formula('Y ~ s(EM71.p.day)'), data = X[aux.marcador, ])
+# summary(mod1)
+# plot(gam(formula = as.formula('Y ~ s(EM71.p.day)'), data = X[aux.marcador, ]))
+# plot(gam(formula = as.formula('Y ~ s(EM71.p.lag, df = 3)'), data = X[aux.marcador, ]))
 
 #decisión del grado de polinomio (a mano)
-for (station in estaciones){
-  X <- X_list[[station]]
+for (station in estaciones[17:28]){
+  X <- MHO[[station]]$X
   aux.marcador <- is.element(X$mes, c(6,7,8)) #meses de mayor lluvia al parecer
   #variable lag
   mod.lag <- gam(formula = as.formula(paste0('Y ~ s(', station, '.p.lag)')), data = X[aux.marcador, ])
@@ -145,16 +157,18 @@ for (station in estaciones){
   plot(mod.day, main = paste(station))
 }
 
-degrees.p.lag <- c(3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
+degrees.p.lag <- c(3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                   3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
 names(degrees.p.lag) <- estaciones
-degrees.p.day <- c(3, 1, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
+degrees.p.day <- c(3, 1, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                   3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
 names(degrees.p.day) <- estaciones
 
 # M4: VARIABLES CON INTERACCIÓN Y POLY()
 M4_list <- list()
 for (station in estaciones){
   cat('Estación: ', station, '\n')
-  X <- X_list[[station]]
+  X <- MHO[[station]]$X
   
   deg.lag <- degrees.p.lag[station]
   deg.day <- degrees.p.day[station]
@@ -168,6 +182,12 @@ for (station in estaciones){
   M4_list[[station]] <- glm(formula_M4, family = binomial(logit), data = X)
 }
 
+for (station in estaciones){
+  MHO[[station]][['M4']] <- M4_list[[station]]
+  MHO[[station]][['vars.M4']] <- M4_list[[station]]$coefficients
+} 
+rm('M4_list')
+saveRDS(MHO, 'MHO.rds')
 
 #----selección de variables --> M5 ----
 # selección variables (automático) según AIC
@@ -282,17 +302,17 @@ for (station in estaciones){
   #formula_null <- as.formula(paste0('Y ~ ', paste0('poly(', station, '.p.day, ',deg.day, ')'), '+',
   #                                  paste0('poly(', station, '.p.lag, ',deg.lag, ')')))
   
-  mod_null <- glm(Y ~ 1, family = binomial(logit), data = X_list[[station]])
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = MHO[[station]]$X)
   
   M5_list[[station]] <- step_rlog(mod_null, 
-                                   data = X_list[[station]], 
+                                   data = MHO[[station]]$X, 
                                    vars = c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
                                             paste0('poly(', station, '.p.lag, ',deg.lag, ')'),
                                             paste0(station,'.p.lag:',station,'.p.day')), 
                                    harmonics.l, harmonics.h)
   
   M6_list[[station]] <- step_rlog(mod_null, 
-                                  data = X_list[[station]], 
+                                  data = MHO[[station]]$X, 
                                   vars = c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
                                            paste0('poly(', station, '.p.lag, ',deg.lag, ')'),
                                            paste0(station,'.p.lag:',station,'.p.day')), 
@@ -306,25 +326,15 @@ for (station in estaciones){
 
 # guardado de una lista definitiva por estacion
 # estacion --> modelo, df, variables escogidas
-
-MHO <- list()
 for (station in estaciones){
-  MHO[[station]][['M1']] <- M1_list[[station]]
-  MHO[[station]][['vars.M1']] <- M1_list[[station]]$coefficients
-  MHO[[station]][['M2']] <- M2_list[[station]]
-  MHO[[station]][['vars.M2']] <- M2_list[[station]]$coefficients
-  MHO[[station]][['M3']] <- M3_list[[station]]
-  MHO[[station]][['vars.M3']] <- M3_list[[station]]$coefficients
-  MHO[[station]][['M4']] <- M4_list[[station]]
-  MHO[[station]][['vars.M4']] <- M4_list[[station]]$coefficients
   MHO[[station]][['M5']] <- M5_list[[station]]
   MHO[[station]][['vars.M5']] <- M5_list[[station]]$coefficients
   MHO[[station]][['M6']] <- M6_list[[station]]
   MHO[[station]][['vars.M6']] <- M6_list[[station]]$coefficients
-  MHO[[station]][['X']] <- X_list[[station]]
 } 
 
 saveRDS(MHO, 'MHO.rds')
+rm(list = c('M6_list', 'M5_list', 'X'))
 MHO <- readRDS('MHO.rds')
 
 # SELECCIÓN AUTOMÁTICA DE MODELO SEGÚN ESTUDIO DE MODELOS ANIDADOS (STAND BY)
@@ -359,7 +369,7 @@ library(pROC)
 
 for (station in estaciones){
   mho <- mho_list[[station]]
-  X <- X_list[[station]]
+  X <- MHO[[station]]$X
   
   # summary(mho)
   # 

@@ -151,7 +151,7 @@ for (station in estaciones){
 
 MDQ <- list()
 for (station in estaciones){
-  MDQ[[station]][['mho']] <- mdq_list[[station]]
+  MDQ[[station]][['mdo']] <- mdq_list[[station]]
   MDQ[[station]][['vars']] <- mdq_list[[station]]$coefficients
   MDQ[[station]][['X']] <- X_list[[station]]
 } 

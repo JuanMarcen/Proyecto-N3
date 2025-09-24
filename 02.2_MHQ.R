@@ -86,9 +86,11 @@ for (station in estaciones){
   plot(mod.day, main = paste(station))
 }
 
-degrees.p.lag <- c(3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 2, 3)
+degrees.p.lag <- c(3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 2, 3,
+                   3, 3, 2, 3, 3, 2, 3, 3, 3, 3, 3, 3)
 names(degrees.p.lag) <- estaciones
-degrees.p.day <- c(1, 3, 3, 3, 3, 3, 3, 3, 1, 3, 1, 1, 1, 1, 1, 3)
+degrees.p.day <- c(1, 3, 3, 3, 3, 3, 3, 3, 1, 3, 1, 1, 1, 1, 1, 3,
+                   3, 2, 2, 3, 1, 1, 3, 1, 1, 2, 1, 1)
 names(degrees.p.day) <- estaciones
 
 # models M1--M5 fitting
@@ -159,6 +161,23 @@ for (station in estaciones){
   
 }
 
+MHQ <- list()
+for (station in estaciones){
+  MHQ[[station]][['M1']] <- M1_list[[station]]
+  MHQ[[station]][['vars.M1']] <- M1_list[[station]]$coefficients
+  MHQ[[station]][['M2']] <- M2_list[[station]]
+  MHQ[[station]][['vars.M2']] <- M2_list[[station]]$coefficients
+  MHQ[[station]][['M3']] <- M3_list[[station]]
+  MHQ[[station]][['vars.M3']] <- M3_list[[station]]$coefficients
+  MHQ[[station]][['M4']] <- M4_list[[station]]
+  MHQ[[station]][['vars.M4']] <- M4_list[[station]]$mu.coefficients
+  MHQ[[station]][['M5']] <- M5_list[[station]]
+  MHQ[[station]][['vars.M5']] <- M5_list[[station]]$mu.coefficients
+  MHQ[[station]][['X']] <- X_list[[station]]
+} 
+rm(list = c('M1_list', 'M2_list', 'M3_list', 'M4_list', 'M5_list', 'X_list',
+            'p_day', 'X_final', 'mod.day', 'mod.lag'))
+saveRDS(MHQ, 'MHQ.rds')
 
 # model selection
 # similar to MHQ but changing the function
@@ -274,7 +293,7 @@ harmonics.h <- list(
 
 
 M6_list <- list()
-for (station in estaciones){
+for (station in estaciones[1]){
   cat('Estación ', station, '\n\n')
   
   deg.lag <- degrees.p.lag[station]
@@ -284,11 +303,11 @@ for (station in estaciones){
                      sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
                        I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
                      family = GA, 
-                     data = X_list[[station]],
+                     data = MHQ[[station]]$X,
                      trace = F)
   
   M6_list[[station]] <- step_glm(mod_null, 
-                                   data = X_list[[station]], 
+                                   data = MHQ[[station]]$X, 
                                    vars = c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
                                             paste0('poly(', station, '.p.lag, ',deg.lag, ')'),
                                             paste0(station,'.p.lag:',station,'.p.day')), 
@@ -299,21 +318,10 @@ for (station in estaciones){
 
 
 
-MHQ <- list()
-for (station in estaciones){
-  MHQ[[station]][['M1']] <- M1_list[[station]]
-  MHQ[[station]][['vars.M1']] <- M1_list[[station]]$coefficients
-  MHQ[[station]][['M2']] <- M2_list[[station]]
-  MHQ[[station]][['vars.M2']] <- M2_list[[station]]$coefficients
-  MHQ[[station]][['M3']] <- M3_list[[station]]
-  MHQ[[station]][['vars.M3']] <- M3_list[[station]]$coefficients
-  MHQ[[station]][['M4']] <- M4_list[[station]]
-  MHQ[[station]][['vars.M4']] <- M4_list[[station]]$mu.coefficients
-  MHQ[[station]][['M5']] <- M5_list[[station]]
-  MHQ[[station]][['vars.M5']] <- M5_list[[station]]$mu.coefficients
+
+for (station in estaciones[1]){
   MHQ[[station]][['M6']] <- M6_list[[station]]
   MHQ[[station]][['vars.M6']] <- M6_list[[station]]$mu.coefficients
-  MHQ[[station]][['X']] <- X_list[[station]]
 } 
 
 saveRDS(MHQ, 'MHQ.rds')
@@ -380,13 +388,13 @@ shape <- 1/M5$sigma.fv^2
 plot((X$R036.p - M5$mu.fv) / (sqrt(M5$mu.fv^2/shape)))
 points(X$R036.p - M6$mu.fv, col = 'red')
 
-for (station in estaciones){
+for (station in estaciones[1]){
  station.p <- paste0(station, '.p')
-  shape <- 1 / M5_list[[station]]$sigma.fv^2
-  rate <- shape / M5_list[[station]]$mu.fv
+  shape <- 1 / MHQ[[station]]$M6$sigma.fv^2
+  rate <- shape / MHQ[[station]]$M6$mu.fv
   
-  hist(X_list[[station]][, station.p], breaks = 50, prob = T, main = station)
-  lines(density(X_list[[station]][, station.p]), col = 'blue')
+  hist(MHQ[[station]]$X[, station.p], breaks = 50, prob = T, main = station)
+  lines(density(MHQ[[station]]$X[, station.p]), col = 'blue')
   y_sim <- rgamma(length(shape), shape = shape, rate = rate)
   lines(density(y_sim), col = 'red', lwd = 2)
  }
@@ -396,8 +404,93 @@ station.p <- paste0(station, '.p')
 shape <- 1 / mhq_list[[station]]$sigma.fv^2
 rate <- shape / mhq_list[[station]]$mu.fv
 plot(shape, type = 'l')
-hist(X_list[[station]][, station.p], breaks = 50, prob = T, main = station)
-lines(density(X_list[[station]][, station.p]), col = 'blue')
+hist(MHQ[[station]]$X[, station.p], breaks = 50, prob = T, main = station)
+lines(density(MHQ[[station]]$X[, station.p]), col = 'blue')
 y_sim <- rgamma(length(shape), shape = shape, rate = rate)
 lines(density(y_sim), col = 'red', lwd = 2)
+
+
+# comparison with uniform (0,1)
+# example 1 station
+station <- estaciones[1]
+
+m <- MHQ[[station]]$M6
+X <- MHQ[[station]]$X
+p.obs <- X[[paste0(station, '.p')]]
+
+mu <- m$mu.fv
+shape <- 1 / m$sigma.fv
+rate <- shape / mu
+
+u <- pgamma(p.obs, shape = shape, rate = rate)
+
+plot(density(u, from = 0, to = 1), col = 'blue', lwd = 2)
+lines(density(runif(length(u), 0, 1), from = 0, to = 1), col = 'red', lwd = 2)
+
+library(overlapping)
+overlap(list(observed = u,
+             theorical = runif(length(u), 0, 1)),
+        type = '1',
+        plot = T)
+
+u_sorted <- sort(u)
+
+# Cuantiles teóricos de una uniforme(0,1)
+n <- length(u_sorted)
+theoretical <- (1:n) / (n + 1)  # usar (i)/(n+1) es común para evitar 0 y 1 exactos
+
+# QQ-plot
+plot(theoretical, u_sorted, 
+     main = "QQ-plot vs Uniforme(0,1)", 
+     xlab = "Cuantiles teóricos U(0,1)", 
+     ylab = "Cuantiles empíricos de u")
+abline(0, 1, col = "red", lwd = 2) # línea de referencia
+
+
+# 100 simulaciones y mirar quantiles
+m <- MHQ[[station]]$M6
+X <- MHQ[[station]]$X
+p.obs <- X[[paste0(station, '.p')]]
+
+mu <- m$mu.fv
+shape <- 1 / m$sigma.fv
+rate <- shape / mu
+
+plot(density(p.obs), col = 'blue', lwd = 2)
+for (i in 1:100){
+  u <- rgamma(length(p.obs), shape = shape, rate = rate)
+  lines(density(u), col = 'red')
+}
+lines(density(p.obs), col = 'blue', lwd = 2)
+
+cuantiles <- c('q0.05', 'q0.50', 'q0.90', 'q0.95', 'q0.99')
+q.obs <- quantile(p.obs, probs = c(0.05, 0.5, 0.90, 0.95, 0.99))
+names(q.obs) <- cuantiles
+q.obs
+
+q.sim <- data.frame(matrix(NA, ncol = 5))
+colnames(q.sim) <- cuantiles
+for (i in 1:100){
+  u <- rgamma(length(p.obs), shape = shape, rate = rate)
+  q <- quantile(u, probs = c(0.05, 0.5, 0.90, 0.95, 0.99))
+  names(q) <- cuantiles
+  q.sim <- rbind(q.sim, q)
+}
+q.sim <- q.sim[-1, ]
+
+plot(rep(q.obs[1], times = dim(q.sim)[1]), q.sim$q0.05, xlim = c(q.obs[1]-0.5, q.obs[5]+0.5), ylim = c(0, 10))
+points(rep(q.obs[2], times = dim(q.sim)[1]), q.sim$q0.50)
+points(rep(q.obs[3], times = dim(q.sim)[1]), q.sim$q0.90)
+points(rep(q.obs[4], times = dim(q.sim)[1]), q.sim$q0.95)
+points(rep(q.obs[5], times = dim(q.sim)[1]), q.sim$q0.99)
+
+boxplot(q.sim,
+        at = q.obs,                # 👈 coloca cada boxplot en la posición correspondiente
+        names = round(q.obs, 2),   # (opcional) etiquetas en el eje x
+        xlim = c(q.obs[1]-0.5, q.obs[5]+0.5),
+        ylim = c(0, max(q.sim)),
+        col = "lightblue",
+        main = "Boxplots alineados con q.obs",
+        ylab = "Valores simulados",
+        xlab = "Cuantiles observados")
 #------
