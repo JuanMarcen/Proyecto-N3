@@ -4,6 +4,15 @@ rm(list = ls())
 
 load('data.RData')
 
+# cálculo de periodo comun
+library(lubridate)
+n <- length(estaciones)
+aux <- apply(df_hours[, paste0(estaciones, '.p')], 1, function(row) all(!is.na(row)))
+
+first <- which(aux)[1]
+last <- tail(which(aux), 1)
+date.first <- as.Date(paste0(df_hours[first, c('dia.mes', 'mes', 't')], collapse = '-'), format = '%d-%m-%Y')
+date.last <- as.Date(paste0(df_hours[last, c('dia.mes', 'mes', 't')], collapse = '-'), format = '%d-%m-%Y')
 
 # harmonics
 cs <- function(t,harmonics=1, total) {
@@ -316,6 +325,7 @@ for (station in estaciones){
 } 
 
 saveRDS(MHO, 'MHO.rds')
+MHO <- readRDS('MHO.rds')
 
 # SELECCIÓN AUTOMÁTICA DE MODELO SEGÚN ESTUDIO DE MODELOS ANIDADOS (STAND BY)
 data <- X_list[[15]]
@@ -383,6 +393,11 @@ colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
 rownames(auc.df) <- estaciones
 auc.df$station <- estaciones
 
+auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
+colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
+rownames(auc.df.pc) <- estaciones
+auc.df.pc$station <- estaciones
+
 AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
 colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
 rownames(AIC.df) <- estaciones
@@ -394,13 +409,19 @@ rownames(BIC.df) <- estaciones
 BIC.df$station <- estaciones
 
 for (station in estaciones){
-  M1 <- M1_list[[station]]
-  M2 <- M2_list[[station]]
-  M3 <- M3_list[[station]]
-  M4 <- M4_list[[station]]
-  M5 <- M5_list[[station]]
-  M6 <- M6_list[[station]]
-  X <- X_list[[station]]
+  M1 <- MHO[[station]]$M1
+  M2 <- MHO[[station]]$M2
+  M3 <- MHO[[station]]$M3
+  M4 <- MHO[[station]]$M4
+  M5 <- MHO[[station]]$M5
+  M6 <- MHO[[station]]$M6
+  X <- MHO[[station]]$X
+  
+  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = "%Y-%m-%d")
+  ind <- which(X$date >= date.first & X$date <= date.last)
+  X_pc <- X[ind, ]
+  
+  #cat(dim(X_pc)[1], '\n')
   
   roc_M1 <- roc(X$Y, predict(M1, type = 'response'))
   roc_M2 <- roc(X$Y, predict(M2, type = 'response'))
@@ -408,6 +429,13 @@ for (station in estaciones){
   roc_M4 <- roc(X$Y, predict(M4, type = 'response'))
   roc_M5 <- roc(X$Y, predict(M5, type = 'response'))
   roc_M6 <- roc(X$Y, predict(M6, type = 'response'))
+  
+  roc_M1.pc <- roc(X$Y[ind], M1$fitted.values[ind])
+  roc_M2.pc <- roc(X$Y[ind], M2$fitted.values[ind])
+  roc_M3.pc <- roc(X$Y[ind], M3$fitted.values[ind])
+  roc_M4.pc <- roc(X$Y[ind], M4$fitted.values[ind])
+  roc_M5.pc <- roc(X$Y[ind], M5$fitted.values[ind])
+  roc_M6.pc <- roc(X$Y[ind], M6$fitted.values[ind])
   
   # plot(roc_M1,
   #      col = 'red',
@@ -441,6 +469,8 @@ for (station in estaciones){
   
   auc.df[station, 2:7] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
                                auc(roc_M4), auc(roc_M5), auc(roc_M6)), 3)
+  auc.df.pc[station, 2:7] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
+                                  auc(roc_M4.pc), auc(roc_M5.pc), auc(roc_M6.pc)), 3)
   AIC.df[station, 2:7] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
                                AIC(M4), AIC(M5), AIC(M6)), 2)
   BIC.df[station, 2:7] <- round(c(BIC(M1), BIC(M2), BIC(M3), 
@@ -452,51 +482,109 @@ for (station in estaciones){
 library(ggplot2)
 library(reshape2)
 
-mapa_calor <- function(df){
+# mapa_calor <- function(df){
+#   df_long <- melt(df, id.vars = "station")
+#   df_long <- df_long %>%
+#     group_by(station) %>%
+#     mutate(rank = rank(-value, ties.method = "first")) %>%  # rank 1 = máximo
+#     ungroup()
+#   
+#   df_long <- df_long %>%
+#     mutate(color_cat = case_when(
+#       rank == 1 ~ "Max",
+#       rank == 2 ~ "Segundo",
+#       rank == 3 ~ "Medio1",
+#       rank == 4 ~ "Medio2",
+#       rank == 5 ~ "Penúltimo",
+#       rank == 6 ~ "Mínimo"
+#     ))
+#   
+#   # Definir colores manualmente
+#   colores <- c(
+#     "Max" = "red",
+#     "Segundo" = "tomato",
+#     "Medio1" = "#F0C2BB",
+#     "Medio2" = "#C7D8F0",
+#     "Penúltimo" = "#7EACED",
+#     "Mínimo" = "#277DF5"
+#   )
+#   
+#   # Graficar
+#   ggplot(df_long, aes(x = variable, y = station, fill = color_cat)) +
+#     geom_tile(color = "white") +
+#     geom_text(aes(label = round(value, 3)), size = 5) +
+#     scale_fill_manual(values = colores) +
+#     theme_minimal() +
+#     theme(
+#       axis.title = element_blank(),
+#       legend.position = "none",
+#       axis.text.x = element_text(angle = 45, hjust = 1),
+#       panel.grid = element_blank()
+#     )
+#   
+# }
+
+mapa_calor <- function(df, tipo = c("AUC", "AIC")) {
+  tipo <- match.arg(tipo)  # Forzar que sea uno de los dos
+  
+  # Pasar a formato largo
   df_long <- melt(df, id.vars = "station")
-  df_long <- df_long %>%
-    group_by(station) %>%
-    mutate(rank = rank(-value, ties.method = "first")) %>%  # rank 1 = máximo
-    ungroup()
   
-  df_long <- df_long %>%
-    mutate(color_cat = case_when(
-      rank == 1 ~ "Max",
-      rank == 2 ~ "Segundo",
-      rank == 3 ~ "Medio1",
-      rank == 4 ~ "Medio2",
-      rank == 5 ~ "Penúltimo",
-      rank == 6 ~ "Mínimo"
-    ))
-  
-  # Definir colores manualmente
-  colores <- c(
-    "Max" = "red",
-    "Segundo" = "tomato",
-    "Medio1" = "#F0C2BB",
-    "Medio2" = "#C7D8F0",
-    "Penúltimo" = "#7EACED",
-    "Mínimo" = "#277DF5"
-  )
-  
-  # Graficar
-  ggplot(df_long, aes(x = variable, y = station, fill = color_cat)) +
-    geom_tile(color = "white") +
-    geom_text(aes(label = round(value, 3)), size = 5) +
-    scale_fill_manual(values = colores) +
-    theme_minimal() +
-    theme(
-      axis.title = element_blank(),
-      legend.position = "none",
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      panel.grid = element_blank()
-    )
-  
+  if (tipo == "AUC") {
+    # Escalado global entre 0.5 y 1
+    ggplot(df_long, aes(x = variable, y = station, fill = value)) +
+      geom_tile(color = "white") +
+      geom_text(aes(label = round(value, 3)), size = 5) +
+      scale_fill_gradientn(
+        colors = c("blue", "lightblue", "orange", "red"),
+        limits = c(min(df[, -1]),max(df[, -1])),
+        name = "AUC"
+      ) +
+      theme_minimal() +
+      theme(
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank()
+      )
+    
+  } else if (tipo == "AIC") {
+    # 1️⃣ Relativizar cada fila con respecto a la primera columna
+    df_rel <- df
+    for (i in 1:nrow(df)) {
+      df_rel[i, -1] <- df[i, -1] / df[i, 2]
+    }
+    
+    df_long <- melt(df_rel, id.vars = "station")
+    
+    # 2️⃣ Calcular valores normalizados por fila solo para la escala de color
+    df_long <- df_long %>%
+      group_by(station) %>%
+      mutate(color_val = (value - min(value)) / (max(value) - min(value))) %>%
+      ungroup()
+    
+    # 3️⃣ Graficar usando color_val para el gradiente y value para el texto
+    ggplot(df_long, aes(x = variable, y = station, fill = color_val)) +
+      geom_tile(color = "white") +
+      geom_text(aes(label = round(value, 3)), size = 5) +
+      scale_fill_gradientn(
+        colors = c("#277DF5", "white", "red"),
+        name = "BIC relativo\npor fila",
+        breaks = c(0, 0.5, 1),
+        labels = c("min", "", "max")
+      ) +
+      theme_minimal() +
+      theme(
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank()
+      )
+  }
 }
 
-mapa_calor(auc.df)
-mapa_calor(AIC.df)
-mapa_calor(BIC.df)
+mapa_calor(auc.df, tipo = 'AUC')
+mapa_calor(auc.df.pc, tipo = 'AUC')
+mapa_calor(AIC.df[, -5], tipo = 'AIC')
+mapa_calor(BIC.df[, -5], tipo = 'AIC')
 
 plot(auc.df$M1, auc.df$M2, ylim = c(0.5, 1), xlim = c(0.5, 1))
 points(auc.df$M1, auc.df$M3, col = 'blue')

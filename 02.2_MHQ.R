@@ -35,7 +35,7 @@ df_hours <- df_hours %>%
   left_join(harm_l, by = 'l') %>%
   left_join(harm_h, by = 'h')
 
-# data
+#----data.-----
 X_list <- list()
 for (station in estaciones){
   station.p <- paste0(station, '.p')
@@ -66,9 +66,103 @@ for (station in estaciones){
   X_list[[station]] <- X_final
 }
 
-# model selection
-# similar to MHO but changing the function
+#----models fitting----
+# M1: harm + CV ct
+# M2: rain var + CV ct
+# M3: M1 + M2
+# M4: M1 + M2 + CV varying
+# M5: M1 + transf. var rain + CV varying
+
+# grado polinomio (M5)
+library(gam)
+for (station in estaciones){
+  X <- X_list[[station]]
+  aux.marcador <- is.element(X$mes, c(6,7,8)) #meses de mayor lluvia al parecer
+  #variable lag
+  mod.lag <- gam(formula = as.formula(paste0(paste0(station, '.p'), '~ s(', station, '.p.lag)')), data = X[aux.marcador, ])
+  plot(mod.lag, main = paste(station))
+  #variable del dia
+  mod.day <- gam(formula = as.formula(paste0(paste0(station, '.p'), '~ s(', station, '.p.day)')), data = X[aux.marcador, ])
+  plot(mod.day, main = paste(station))
+}
+
+degrees.p.lag <- c(3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 2, 3)
+names(degrees.p.lag) <- estaciones
+degrees.p.day <- c(1, 3, 3, 3, 3, 3, 3, 3, 1, 3, 1, 1, 1, 1, 1, 3)
+names(degrees.p.day) <- estaciones
+
+# models M1--M5 fitting
 library(gamlss)
+M1_list <- list()
+M2_list <- list()
+M3_list <- list()
+M4_list <- list()
+M5_list <- list()
+for (station in estaciones){
+  cat('Ajuste modelos de la estación: ', station, '\n')
+  
+  X <- X_list[[station]]
+  station.p <- paste0(station, '.p')
+  
+  # modelos con CV constante
+  
+  formula_M1 <- as.formula(paste(station.p, '~', paste(c(colnames(harm_h)[2:ncol(harm_h)],
+                                                colnames(harm_l)[2:ncol(harm_l)]),
+                                              collapse = '+')))
+  formula_M2 <- as.formula(paste(station.p, '~', paste0(station.p, '.day'), '+', paste0(station.p, '.lag')))
+  
+  formula_M3 <- as.formula(
+    paste(station.p, '~', paste(colnames(X)[7:ncol(X)], collapse = '+'))
+  )
+  
+  cat('Ajuste modelo M1: ', deparse(formula_M1), '\n')
+  M1_list[[station]] <- glm(formula = formula_M1, family = Gamma(link = 'log'), data = X)
+  
+  cat('Ajuste modelo M2: ', deparse(formula_M2), '\n')
+  M2_list[[station]] <- glm(formula = formula_M2, family = Gamma(link = 'log'), data = X)
+  
+  cat('Ajuste modelo M3: ', deparse(formula_M3), '\n')
+  M3_list[[station]] <- glm(formula = formula_M3, family = Gamma(link = 'log'), data = X)
+  
+  #modelos con CV variante segun armonicos
+  deg.lag <- degrees.p.lag[station]
+  deg.day <- degrees.p.day[station]
+  
+  formula_M4 <- formula_M3
+  
+  cat('Ajuste modelo M4: ', deparse(formula_M4), '\n')
+  M4_list[[station]] <- gamlss(formula_M4, 
+                               sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
+                                 I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
+                               family = GA, 
+                               data = X,
+                               trace = F)
+  
+  formula_M5 <- as.formula(paste(station.p, '~', 
+                                 paste(c(colnames(harm_h)[2:ncol(harm_h)],
+                                                colnames(harm_l)[2:ncol(harm_l)]),
+                                              collapse = '+'), 
+                                 '+' ,
+                                 paste(c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
+                                         paste0('poly(', station, '.p.lag, ',deg.lag, ')'),
+                                         paste0(station,'.p.lag:',station,'.p.day')), 
+                                       collapse = '+')))
+  
+  cat('Ajuste modelo M5: ', deparse(formula_M5), '\n')
+  M5_list[[station]] <- gamlss(formula_M5, 
+                               sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
+                                 I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
+                               family = GA, 
+                               data = X,
+                               trace = F)
+  
+  
+}
+
+
+# model selection
+# similar to MHQ but changing the function
+
 step_glm <- function(initial_model,
                       data,
                       vars,
@@ -86,24 +180,33 @@ step_glm <- function(initial_model,
   cat('AIC: ', AIC(mod.aux), '\n')
   
   #  asumimos que las covariables siempre son escogidas
-  if (!is.null(vars)) {
-    for (var in vars){
-      formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
-      mod.temp <- gamlss(formula.aux, 
-                         sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
-                           I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
-                         family = GA, 
-                         data = data,
-                         trace = F)
-      
-      if (AIC(mod.temp) < AIC(mod.aux)){
-        cat('Added: ', var, '\n')
-        cat('AIC: ', AIC(mod.temp), '\n')
-        mod.aux <- mod.temp
-      }
-    }
-    
-  }
+  # if (!is.null(vars)) {
+  #   for (var in vars){
+  #     formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
+  #     mod.temp <- gamlss(formula.aux, 
+  #                        sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
+  #                          I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
+  #                        family = GA, 
+  #                        data = data,
+  #                        trace = F)
+  #     
+  #     if (AIC(mod.temp) < AIC(mod.aux)){
+  #       cat('Added: ', var, '\n')
+  #       cat('AIC: ', AIC(mod.temp), '\n')
+  #       mod.aux <- mod.temp
+  #     }
+  #   }
+  #   
+  # }
+  
+  #selección de variable por método step directamente
+  scope.aux <- update(formula(mod.aux), paste('. ~ . +', paste(vars, collapse = '+')))
+  
+  
+  mod.aux <- step(mod.aux, scope = scope.aux, direction = 'both', trace = FALSE)
+  
+  cat('Model after ', 'AIC ', 'step algorithm for variables: ', deparse(formula(mod.aux)), '\n')
+  cat('AIC: ', AIC(mod.aux), '\n')
   
   
   for (h in harmonics.l){
@@ -168,25 +271,9 @@ harmonics.h <- list(
   h4 = c('s.4.h', 'c.4.h')
 )
 
-# grado polinomio
-library(gam)
-for (station in estaciones){
-  X <- X_list[[station]]
-  aux.marcador <- is.element(X$mes, c(6,7,8)) #meses de mayor lluvia al parecer
-  #variable lag
-  mod.lag <- gam(formula = as.formula(paste0(paste0(station, '.p'), '~ s(', station, '.p.lag)')), data = X[aux.marcador, ])
-  plot(mod.lag, main = paste(station))
-  #variable del dia
-  mod.day <- gam(formula = as.formula(paste0(paste0(station, '.p'), '~ s(', station, '.p.day)')), data = X[aux.marcador, ])
-  plot(mod.day, main = paste(station))
-}
 
-degrees.p.lag <- c(3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 2, 3, 3, 2, 3)
-names(degrees.p.lag) <- estaciones
-degrees.p.day <- c(1, 3, 3, 3, 3, 3, 3, 3, 1, 3, 1, 1, 1, 1, 1, 3)
-names(degrees.p.day) <- estaciones
 
-mhq_list <- list()
+M6_list <- list()
 for (station in estaciones){
   cat('Estación ', station, '\n\n')
   
@@ -200,7 +287,7 @@ for (station in estaciones){
                      data = X_list[[station]],
                      trace = F)
   
-  mhq_list[[station]] <- step_glm(mod_null, 
+  M6_list[[station]] <- step_glm(mod_null, 
                                    data = X_list[[station]], 
                                    vars = c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
                                             paste0('poly(', station, '.p.lag, ',deg.lag, ')'),
@@ -214,94 +301,89 @@ for (station in estaciones){
 
 MHQ <- list()
 for (station in estaciones){
-  MHQ[[station]][['mho']] <- mhq_list[[station]]
-  MHQ[[station]][['vars']] <- mhq_list[[station]]$coefficients
+  MHQ[[station]][['M1']] <- M1_list[[station]]
+  MHQ[[station]][['vars.M1']] <- M1_list[[station]]$coefficients
+  MHQ[[station]][['M2']] <- M2_list[[station]]
+  MHQ[[station]][['vars.M2']] <- M2_list[[station]]$coefficients
+  MHQ[[station]][['M3']] <- M3_list[[station]]
+  MHQ[[station]][['vars.M3']] <- M3_list[[station]]$coefficients
+  MHQ[[station]][['M4']] <- M4_list[[station]]
+  MHQ[[station]][['vars.M4']] <- M4_list[[station]]$mu.coefficients
+  MHQ[[station]][['M5']] <- M5_list[[station]]
+  MHQ[[station]][['vars.M5']] <- M5_list[[station]]$mu.coefficients
+  MHQ[[station]][['M6']] <- M6_list[[station]]
+  MHQ[[station]][['vars.M6']] <- M6_list[[station]]$mu.coefficients
   MHQ[[station]][['X']] <- X_list[[station]]
 } 
 
 saveRDS(MHQ, 'MHQ.rds')
+MHQ <- readRDS('MHQ.rds')
 
-# prueba para una estación. Juguetear
-station <- estaciones[1]
-station.p <- paste0(station, '.p')
-X <- df_hours[, c('t', 'l', 'mes', 'dia.mes', 'h', station.p,
-                  colnames(harm_l)[2:ncol(harm_l)],
-                  colnames(harm_h)[2:ncol(harm_h)])]
+#----model comparison----
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
+rownames(AIC.df) <- estaciones
+AIC.df$station <- estaciones
+for (station in estaciones){
+  M1 <- MHQ[[station]]$M1
+  M2 <- MHQ[[station]]$M2
+  M3 <- MHQ[[station]]$M3
+  M4 <- MHQ[[station]]$M4
+  M5 <- MHQ[[station]]$M5
+  M6 <- MHQ[[station]]$M6
+  X <- MHQ[[station]]$X
+  AIC.df[station, 2:7] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+                                  AIC(M4), AIC(M5), AIC(M6)), 2)
+  
+}
 
-# whole day
-p_day <- df_days[,  c('t', 'l', 'mes', 'dia.mes', station.p)]
-colnames(p_day)[colnames(p_day) == station.p] <- paste0(station.p, '.day')
+library(ggplot2)
+library(reshape2)
 
-X <- X %>%
-  left_join(p_day, by = c('t', 'l', 'mes', 'dia.mes'))
+df_rel <- AIC.df
+for (i in 1:nrow(AIC.df)) {
+  df_rel[i, -1] <- AIC.df[i, -1] / AIC.df[i, 2]
+}
 
-# lags
-X <- X %>% 
-  mutate(!!paste0(station.p, '.lag') := lag(.data[[station.p]]))
+df_long <- melt(df_rel, id.vars = "station")
 
-#eliminate days with no rain
-X_final <- X[-which(X[[paste0(station.p,'.day')]] == 0), ]
+# 2️⃣ Calcular valores normalizados por fila solo para la escala de color
+df_long <- df_long %>%
+  group_by(station) %>%
+  mutate(color_val = (value - min(value)) / (max(value) - min(value))) %>%
+  ungroup()
 
-# hourly indicator of rain
-X_final <- X_final %>% 
-  filter(.data[[station.p]] > 0) %>%
-  na.omit() %>%
-  as.data.frame
-
-hist(X_final[, station.p], breaks = 50, prob = T)
-lines(density(X_final[, station.p]), col = 'blue')
-
-formula <- as.formula(paste(station.p, '~',  paste(colnames(X_final)[8:(ncol(X_final) - 2)], 
-                                                   collapse = '+'), '+',
-                            paste0('poly(', station, '.p.day, ',3, ')'), '+' ,
-                            paste0('poly(', station, '.p.lag, ',3, ')'), '+',
-                            paste0(station,'.p.lag:',station,'.p.day')))
-formula
-
-fit <- glm(formula,
-           family = Gamma(link = 'log'),
-           data = X_final)
-summary(fit)
-
-plot(fit)
-
-
-fit$offset
-sum <- summary(fit)
-r <- 1 / sum$dispersion #estimation of shape parameter
-
-mu <- exp(fit$fitted.values)
-lambda <- r / mu
-
-curve(dgamma(x, shape=r, rate = mean(lambda)), 
-      col="red", lwd=2, add=TRUE)
-
-plot(residuals(fit, type="deviance"))
-qqnorm(residuals(fit, type="pearson")); qqline(residuals(fit, type="pearson"))
+# 3️⃣ Graficar usando color_val para el gradiente y value para el texto
+ggplot(df_long, aes(x = variable, y = station, fill = color_val)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(value, 3)), size = 5) +
+  scale_fill_gradientn(
+    colors = c("#277DF5", "white", "red"),
+    name = "AIC relativo\npor fila",
+    breaks = c(0, 0.5, 1),
+    labels = c("min", "", "max")
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
 
 
-library(gamlss)
-fit <- gamlss(formula, sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
-              family = GA, data = X_final)
+#----model control----
+M6 <- MHQ[[station]]$M6
+M5 <- MHQ[[station]]$M5
+X <- MHQ[[station]]$X
 
-sum <- summary(fit)
-plot(fit)
-
-
-
-#rate
-plot(1 / fit$sigma.fv^2, type = 'l')
-
-coef.var <- tapply(fit$sigma.fv, INDEX = X_final$mes, mean)
-plot(coef.var, type = 'l')
-
-media_mensual <- tapply(1/fit$sigma.fv^2, INDEX = X_final$mes, mean)
-plot(media_mensual, type = 'l')
+shape <- 1/M5$sigma.fv^2 
+plot((X$R036.p - M5$mu.fv) / (sqrt(M5$mu.fv^2/shape)))
+points(X$R036.p - M6$mu.fv, col = 'red')
 
 for (station in estaciones){
  station.p <- paste0(station, '.p')
-  shape <- 1 / mhq_list[[station]]$sigma.fv^2
-  rate <- shape / mhq_list[[station]]$mu.fv
+  shape <- 1 / M5_list[[station]]$sigma.fv^2
+  rate <- shape / M5_list[[station]]$mu.fv
   
   hist(X_list[[station]][, station.p], breaks = 50, prob = T, main = station)
   lines(density(X_list[[station]][, station.p]), col = 'blue')
@@ -319,49 +401,3 @@ lines(density(X_list[[station]][, station.p]), col = 'blue')
 y_sim <- rgamma(length(shape), shape = shape, rate = rate)
 lines(density(y_sim), col = 'red', lwd = 2)
 #------
-
-# chat ? 
-# Ajuste con link log
-fit_log <- glm(formula,
-               family = Gamma(link = "log"),
-               data = X_final)
-
-# Ajuste con link inverse
-fit_inv <- glm(formula,
-               family = Gamma(link = "inverse"),
-               data = X_final,
-               start = rep(0.1, times = length(coef(fit_log))))
-
-summary(fit_log)
-summary(fit_inv)
-
-pred_log <- predict(fit_log, type = "response")   # en escala de la media
-pred_inv <- predict(fit_inv, type = "response")
-
-# Comparar primeras filas
-head(data.frame(pred_log, fit$mu.fv, real = X_final[[station.p]]), 10)
-AIC(fit_log, fit_inv)
-
-
-phi <- summary(fit_log)$dispersion  # estimación de la dispersión
-alpha <- 1/phi                      # shape
-mu <- predict(fit_log, type = "response")
-scale <- mu / alpha
-
-# Simulación de valores posibles de Y
-y_sim <- rgamma(length(mu), shape = alpha, scale = scale)
-plot(X_final[[station.p]], type = "p", pch = 16, col = "black",
-    main = "Valores reales vs predichos y simulados",
-    xlab = "Índice", ylab = "Respuesta")
-aux <- cbind(X_final[[station.p]], y_sim)
-head(aux)
-lines(mu, col = "blue", lwd = 2)              # media predicha
-points(y_sim, col = rgb(1, 0, 0, 0.5), pch = 16)  # simulaciones
-legend("topright", legend = c("Observado", "Media predicha", "Simulado"),
-       col = c("black", "blue", "red"), pch = c(16, NA, 16), lty = c(NA, 1, NA))
-
-plot(density(X_final[[station.p]]), col = 'blue', lwd = 2)
-lines(density(y_sim), col = 'red', lwd = 2)
-
-
-

@@ -17,10 +17,10 @@ library(rnaturalearthdata)
 limits <- st_transform(
   as(
     SpatialPointsDataFrame(
+      coords = data.frame(X = c(-2.5, -1), Y = c(40.3, 42)),
       #coords = data.frame(X = c(-2, -1), Y = c(40.3, 42)),
-      #coords = data.frame(X = c(-2, -1), Y = c(40.3, 42)),
-      coords = data.frame(X = c(-3.2, 0.2), Y = c(39, 44)),
-      data = data.frame(X = c(-3.2, 0.2), Y = c(39, 44)),
+      #coords = data.frame(X = c(-3.2, 0.2), Y = c(39, 44)),
+      data = data.frame(X = c(-2.5, -1), Y = c(40.3, 42)),
       proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")),
     'sf'
   ),
@@ -63,7 +63,7 @@ cpoints <- st_transform(
 )
 
 # cleaning of workspace
-rm(list = setdiff(ls(), c("background", "limits", "stations")))
+rm(list = setdiff(ls(), c("background", "limits", "stations", "cpoints")))
 
 # Physical map of desired zone
 hypsobath <- esp_get_hypsobath()
@@ -114,11 +114,11 @@ map_zone <- ggplot(hypsobath) +
                     guide = guide_legend(reverse = TRUE)) +
   xlab("Longitud") + ylab("Latitud") +
   geom_point(aes(x = X, y = Y, color = stations$color), data = data.frame(st_coordinates(stations))) +
-  geom_point(aes(x = X, y = Y),
-             data = data.frame(st_coordinates(cpoints)),
-             col = 'black',
-             size = 3, 
-             shape = 15) + 
+  # geom_point(aes(x = X, y = Y),
+  #            data = data.frame(st_coordinates(cpoints)),
+  #            col = 'black',
+  #            size = 3, 
+  #            shape = 15) + 
   ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations$STAID, color = stations$color), 
                             size = 3.5,
                             position = 'identity', label.size = 0.025,
@@ -131,10 +131,10 @@ map_zone <- ggplot(hypsobath) +
 map_zone
 
 
-map_zone_con_rios <- map_zone +
-  geom_sf(data = rios, color = "blue", size = 0.5)  # color azul para ríos
-
-map_zone_con_rios
+# map_zone_con_rios <- map_zone +
+#   geom_sf(data = rios, color = "blue", size = 0.5)  # color azul para ríos
+# 
+# map_zone_con_rios
 # mapa España con puntos (más adelante)
 # cleaning of workspace
 rm(list = setdiff(ls(), c("background", "limits", "stations")))
