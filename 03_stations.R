@@ -54,11 +54,12 @@ for (i in 1:length(estaciones)){
 stations$Z <- c(655, 855, 1394.5, 292, 761, 
                779, 1412.8, 735,
                1011, 1180, 1280, 1095,
-               872.4, 1173.4, 1008.2, 1229)
+               872.4, 1173.4, 1008.2, 1229,
+523.0, 600.0, 892.5, 914.0, 967.0, 685.0, 820.0, 938.0, 825.4, 1302.2, 1219.8, 988.5)
 
 stations$color <- c(rep('blue', times = 5), rep('red', times = 3),
-                    rep('forestgreen', times = 4), rep('red', times = 4),
-                    rep('forestgreen', times = 12))
+                    rep('forestgreen', times = 4), rep('red', times = 5),
+                    rep('forestgreen', times = 11))
 
 # añadido de Ateca
 stations <- rbind(
