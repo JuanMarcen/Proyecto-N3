@@ -161,7 +161,7 @@ step_rlog <- function(initial_model,
 }
 
 M4_list <- list()
-for (station in estaciones){
+for (station in estaciones[1]){
   cat('Estación: ',station, '\n\n')
   
   mod_null <- glm(Y ~ 1, family = binomial(logit), data = X_list[[station]])
@@ -197,12 +197,78 @@ MDO <- readRDS('MDO.rds')
 
 # M5 Y M6 ....
 library(gam)
+deg_list <- list()
+for (station in estaciones){
+  vars <- names(MDO[[station]]$vars.M4)
+  vars_era5 <- vars[grepl('z', vars)]
+  deg_list[[station]] <- rep(0, times = length(vars_era5))
+  names(deg_list[[station]]) <- vars_era5
+  # for (var in vars_era5){
+  #   plot(gam(formula = as.formula(paste('Y ~ s(', var, ')')), data = MDO[[station]]$X),
+  #        main = paste(station, var, sep = '-'))
+  # }
+}
 
-vars <- names(MDO[[station]]$vars.M4)
-vars_era5 <- vars[grepl('z', vars)]
-vars_era5
 
-plot(gam(formula = as.formula(paste('Y ~ s(', vars_era5[8], ')')), data = MDO[[station]]$X))
+for (station in estaciones) {
+  for (var in rev(names(deg_list[[station]]))){
+    plot(gam(formula = as.formula(paste('Y ~ s(', var, ')')), data = MDO[[station]]$X),
+         main = paste(station, var, sep = '-'))
+  }
+  cat("Introduce los valores del vector de grados de la estación", station, 
+      '\n', "(separados por espacios, y pulsa Enter al final):\n")
+  vec <- scan(what = numeric(), quiet = TRUE)
+  aux <- names(deg_list[[station]])
+  deg_list[[station]] <- vec
+  names(deg_list[[station]]) <- aux
+  dev.off()
+}
+
+saveRDS(deg_list, 'deg_list.rds')
+deg_list <- readRDS('deg_list.rds')
+
+for (station in estaciones){
+  cat(paste0(station, '.p.lag') %in% names(MDO[[station]]$vars.M4), '\n')
+}
+
+for (station in rev(estaciones)){
+  plot(gam(formula = as.formula(paste0('Y ~ s(', station, '.p.lag)')), data = MDO[[station]]$X), main = station)
+}
+
+deg_lag <- c(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 
+             3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
+names(deg_lag) <- estaciones
+
+M5_list <- list()
+for (station in estaciones){
+  cat('Estación ', station, '\n\n')
+  
+  deg.list <- deg_list[[station]]
+  deg.lag <- deg_lag[station]
+  #formula_null <- as.formula(paste0('Y ~ ', paste0('poly(', station, '.p.day, ',deg.day, ')'), '+',
+  #                                  paste0('poly(', station, '.p.lag, ',deg.lag, ')')))
+  
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = MDO[[station]]$X)
+  
+  aux <- paste0('poly(', names(deg.list)[1], ', ', deg.list[1], ')')
+  for (i in 2:length(deg.list)){
+    aux <- c(aux,  paste0('poly(', names(deg.list)[i], ', ', deg.list[i], ')'))
+  }
+  
+  M5_list[[station]] <- step_rlog(mod_null, 
+                                  data = MDO[[station]]$X, 
+                                  vars = c(aux, 
+                                           paste0('poly(', station, '.p.lag, ', deg.lag, ')')), 
+                                  harmonics.l)
+  
+}
+
+for (station in estaciones){
+  MDO[[station]][['M5']] <- M5_list[[station]]
+  MDO[[station]][['vars.M5']] <- M5_list[[station]]$coefficients
+}
+
+saveRDS(MDO, 'MDO.rds')
 
 #----Comunalidades---
 stations <- readRDS('stations.rds')
@@ -331,18 +397,18 @@ for (station in estaciones){
 }
 
 #plot all AUC and Roc curves: Comparison of models
-auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 5))
-colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4')
+auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 6))
+colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5')
 rownames(auc.df) <- estaciones
 auc.df$station <- estaciones
 
-auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 5))
-colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4')
+auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 6))
+colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5')
 rownames(auc.df.pc) <- estaciones
 auc.df.pc$station <- estaciones
 
-AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 5))
-colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4')
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 6))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
 
@@ -351,7 +417,7 @@ for (station in estaciones){
   M2 <- MDO[[station]]$M2
   M3 <- MDO[[station]]$M3
   M4 <- MDO[[station]]$M4
-  # M5 <- MDO[[station]]$M5
+  M5 <- MDO[[station]]$M5
   # M6 <- MDO[[station]]$M6
   X <- MDO[[station]]$X
   
@@ -365,22 +431,22 @@ for (station in estaciones){
   roc_M2 <- roc(X$Y, predict(M2, type = 'response'))
   roc_M3 <- roc(X$Y, predict(M3, type = 'response'))
   roc_M4 <- roc(X$Y, predict(M4, type = 'response'))
-  # roc_M5 <- roc(X$Y, predict(M5, type = 'response'))
+  roc_M5 <- roc(X$Y, predict(M5, type = 'response'))
   # roc_M6 <- roc(X$Y, predict(M6, type = 'response'))
   
   roc_M1.pc <- roc(X$Y[ind], M1$fitted.values[ind])
   roc_M2.pc <- roc(X$Y[ind], M2$fitted.values[ind])
   roc_M3.pc <- roc(X$Y[ind], M3$fitted.values[ind])
   roc_M4.pc <- roc(X$Y[ind], M4$fitted.values[ind])
-  # roc_M5.pc <- roc(X$Y[ind], M5$fitted.values[ind])
+  roc_M5.pc <- roc(X$Y[ind], M5$fitted.values[ind])
   # roc_M6.pc <- roc(X$Y[ind], M6$fitted.values[ind])
   
-  auc.df[station, 2:7] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
-                                  auc(roc_M4), auc(roc_M5), auc(roc_M6)), 3)
-  auc.df.pc[station, 2:7] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
-                                     auc(roc_M4.pc), auc(roc_M5.pc), auc(roc_M6.pc)), 3)
-  AIC.df[station, 2:7] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
-                                  AIC(M4), AIC(M5), AIC(M6)), 2)
+  auc.df[station, 2:6] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
+                                  auc(roc_M4), auc(roc_M5)), 3)
+  auc.df.pc[station, 2:6] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
+                                     auc(roc_M4.pc), auc(roc_M5.pc)), 3)
+  AIC.df[station, 2:6] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+                                  AIC(M4), AIC(M5)), 2)
   # BIC.df[station, 2:7] <- round(c(BIC(M1), BIC(M2), BIC(M3), 
   #                                 BIC(M4), BIC(M5), BIC(M6)), 2)
 }
@@ -449,5 +515,5 @@ mapa_calor <- function(df, tipo = c("AUC", "AIC")) {
 
 mapa_calor(auc.df, tipo = 'AUC')
 mapa_calor(auc.df.pc, tipo = 'AUC')
-mapa_calor(AIC.df[, -5], tipo = 'AIC')
+mapa_calor(AIC.df, tipo = 'AIC')
 mapa_calor(BIC.df[, -5], tipo = 'AIC')
