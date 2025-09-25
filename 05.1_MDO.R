@@ -115,19 +115,26 @@ step_rlog <- function(initial_model,
   cat('AIC: ', AIC(mod.aux), '\n')
   
   #  asumimos que las covariables siempre son escogidas
-  if (!is.null(vars)) {
-    for (var in vars){
-      formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
-      mod.temp <- glm(formula.aux, data = data, family = binomial(link = "logit"))
-      
-      if (AIC(mod.temp) < AIC(mod.aux)){
-        cat('Added: ', var, '\n')
-        cat('AIC: ', AIC(mod.temp), '\n')
-        mod.aux <- mod.temp
-      }
-    }
-    
-  }
+  # CAMBIAR A QUE HAGA STEP 
+  # if (!is.null(vars)) {
+  #   for (var in vars){
+  #     formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
+  #     mod.temp <- glm(formula.aux, data = data, family = binomial(link = "logit"))
+  #     
+  #     if (AIC(mod.temp) < AIC(mod.aux)){
+  #       cat('Added: ', var, '\n')
+  #       cat('AIC: ', AIC(mod.temp), '\n')
+  #       mod.aux <- mod.temp
+  #     }
+  #   }
+  #   
+  # }
+  scope.aux <- update(formula(mod.aux), paste('. ~ . +', paste(vars, collapse = '+')))
+  
+  mod.aux <- step(mod.aux, scope = scope.aux, direction = 'both', trace = FALSE)
+  
+  cat('Model after ', 'AIC ', 'step algorithm for variables: ', deparse(formula(mod.aux)), '\n')
+  cat('AIC: ', AIC(mod.aux), '\n')
   
   
   for (h in harmonics.l){
@@ -182,13 +189,20 @@ for (station in estaciones){
   MDO[[station]][['vars.M4']] <- M4_list[[station]]$coefficients
   MDO[[station]][['X']] <- X_list[[station]]
 } 
-
+rm(list = c('M1_list', 'M2_list', 'M3_list', 'M4_list', 'X_list'))
 saveRDS(MDO, 'MDO.rds')
 MDO <- readRDS('MDO.rds')
 
+
+
 # M5 Y M6 ....
 library(gam)
-plot(gam(formula = as.formula(paste('Y ~ s(', colnames(X_list[[station]])[36], ')')), data = X))
+
+vars <- names(MDO[[station]]$vars.M4)
+vars_era5 <- vars[grepl('z', vars)]
+vars_era5
+
+plot(gam(formula = as.formula(paste('Y ~ s(', vars_era5[8], ')')), data = MDO[[station]]$X))
 
 #----Comunalidades---
 stations <- readRDS('stations.rds')

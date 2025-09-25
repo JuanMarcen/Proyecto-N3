@@ -178,7 +178,7 @@ for (station in estaciones){
 rm(list = c('M1_list', 'M2_list', 'M3_list', 'M4_list', 'M5_list', 'X_list',
             'p_day', 'X_final', 'mod.day', 'mod.lag'))
 saveRDS(MHQ, 'MHQ.rds')
-
+MHQ <- readRDS('MHQ.rds')
 # model selection
 # similar to MHQ but changing the function
 
@@ -293,7 +293,7 @@ harmonics.h <- list(
 
 
 M6_list <- list()
-for (station in estaciones[1]){
+for (station in estaciones){
   cat('Estación ', station, '\n\n')
   
   deg.lag <- degrees.p.lag[station]
@@ -319,11 +319,12 @@ for (station in estaciones[1]){
 
 
 
-for (station in estaciones[1]){
+for (station in estaciones){
   MHQ[[station]][['M6']] <- M6_list[[station]]
   MHQ[[station]][['vars.M6']] <- M6_list[[station]]$mu.coefficients
 } 
 
+rm('M6_list')
 saveRDS(MHQ, 'MHQ.rds')
 MHQ <- readRDS('MHQ.rds')
 
@@ -364,7 +365,7 @@ df_long <- df_long %>%
 # 3️⃣ Graficar usando color_val para el gradiente y value para el texto
 ggplot(df_long, aes(x = variable, y = station, fill = color_val)) +
   geom_tile(color = "white") +
-  geom_text(aes(label = round(value, 3)), size = 5) +
+  geom_text(aes(label = round(value, 4)), size = 5) +
   scale_fill_gradientn(
     colors = c("#277DF5", "white", "red"),
     name = "AIC relativo\npor fila",
@@ -380,15 +381,27 @@ ggplot(df_long, aes(x = variable, y = station, fill = color_val)) +
 
 
 #----model control----
+M1 <- MHQ[[station]]$M1
 M6 <- MHQ[[station]]$M6
 M5 <- MHQ[[station]]$M5
+M4 <- MHQ[[station]]$M4
 X <- MHQ[[station]]$X
+#solo verano 
+X_jja <- X %>% filter(mes %in% c(6,7,8))
+ind <- which(X$mes %in% c(6, 7 ,8))
 
 shape <- 1/M5$sigma.fv^2 
-plot((X$R036.p - M5$mu.fv) / (sqrt(M5$mu.fv^2/shape)))
-points(X$R036.p - M6$mu.fv, col = 'red')
+plot(X$E085.p - M6$mu.fv, pch = 19)
+points(X$E085.p - M6$mu.fv, col = 'red', pch = 19)
 
-for (station in estaciones[1]){
+ind <- which.max(M6$mu.fv)
+M6$mu.fv[ind]
+X$E085.p[ind]
+X$E085.p[which.max(X$E085.p)]
+X[ind, ]
+
+par(mfrow = c(7, 4))
+for (station in estaciones){
  station.p <- paste0(station, '.p')
   shape <- 1 / MHQ[[station]]$M6$sigma.fv^2
   rate <- shape / MHQ[[station]]$M6$mu.fv
@@ -399,7 +412,7 @@ for (station in estaciones[1]){
   lines(density(y_sim), col = 'red', lwd = 2)
  }
 
-station <- estaciones[12]
+station <- estaciones[4]
 station.p <- paste0(station, '.p')
 shape <- 1 / mhq_list[[station]]$sigma.fv^2
 rate <- shape / mhq_list[[station]]$mu.fv
@@ -412,85 +425,107 @@ lines(density(y_sim), col = 'red', lwd = 2)
 
 # comparison with uniform (0,1)
 # example 1 station
-station <- estaciones[1]
-
-m <- MHQ[[station]]$M6
-X <- MHQ[[station]]$X
-p.obs <- X[[paste0(station, '.p')]]
-
-mu <- m$mu.fv
-shape <- 1 / m$sigma.fv
-rate <- shape / mu
-
-u <- pgamma(p.obs, shape = shape, rate = rate)
-
-plot(density(u, from = 0, to = 1), col = 'blue', lwd = 2)
-lines(density(runif(length(u), 0, 1), from = 0, to = 1), col = 'red', lwd = 2)
-
 library(overlapping)
-overlap(list(observed = u,
-             theorical = runif(length(u), 0, 1)),
-        type = '1',
-        plot = T)
+unif.comp <- function(station, mes = NULL){
+  m <- MHQ[[station]]$M6
+  X <- MHQ[[station]]$X
+  p.obs <- X[[paste0(station, '.p')]]
+  
+  if(!is.null(mes)){
+    ind <- which(X$mes %in% mes)
+  }else{
+    ind <- 1:dim(X)[1]
+  }
+  # cat(length(ind), '\n')
+  
+  mu <- m$mu.fv[ind]
+  shape <- 1 / m$sigma.fv[ind]
+  rate <- shape / mu
+  
+  u <- pgamma(p.obs[ind], shape = shape, rate = rate)
+   
+  # plot(density(u, from = 0, to = 1), col = 'blue', lwd = 2)
+  # lines(density(runif(length(u), 0, 1), from = 0, to = 1), col = 'red', lwd = 2)
+  
+  ov <- overlap(list(observed = u,
+               theorical = seq(0, 1, length.out = length(u))),
+          type = '1',
+          plot = F)
+  cat(station, ':\t', 'Overlap con U(0,1): ', ov$OV, '\n')
+  
+  u_sorted <- sort(u)
+  # Cuantiles teóricos de una uniforme(0,1)
+  n <- length(u_sorted)
+  theoretical <- (1:n) / (n + 1)  # usar (i)/(n+1) es común para evitar 0 y 1 exactos
+  
+  # QQ-plot
+  plot(theoretical, u_sorted, 
+       main = paste0("QQ-plot vs Uniforme(0,1) ", station, ' - Overlap: ', round(ov$OV,4)), 
+       xlab = "Cuantiles teóricos U(0,1)", 
+       ylab = "Cuantiles empíricos de u")
+  abline(0, 1, col = "red", lwd = 2)
+}
 
-u_sorted <- sort(u)
 
-# Cuantiles teóricos de una uniforme(0,1)
-n <- length(u_sorted)
-theoretical <- (1:n) / (n + 1)  # usar (i)/(n+1) es común para evitar 0 y 1 exactos
-
-# QQ-plot
-plot(theoretical, u_sorted, 
-     main = "QQ-plot vs Uniforme(0,1)", 
-     xlab = "Cuantiles teóricos U(0,1)", 
-     ylab = "Cuantiles empíricos de u")
-abline(0, 1, col = "red", lwd = 2) # línea de referencia
-
+unif.comp(estaciones[4], mes = c(6,7,8))
 
 # 100 simulaciones y mirar quantiles
-m <- MHQ[[station]]$M6
-X <- MHQ[[station]]$X
-p.obs <- X[[paste0(station, '.p')]]
-
-mu <- m$mu.fv
-shape <- 1 / m$sigma.fv
-rate <- shape / mu
-
-plot(density(p.obs), col = 'blue', lwd = 2)
-for (i in 1:100){
-  u <- rgamma(length(p.obs), shape = shape, rate = rate)
-  lines(density(u), col = 'red')
+bp.q.sim <- function(station, n.sim = 100, mes = NULL){
+  m <- MHQ[[station]]$M6
+  X <- MHQ[[station]]$X
+  p.obs <- X[[paste0(station, '.p')]]
+  
+  if(!is.null(mes)){
+    ind <- which(X$mes %in% mes)
+  }else{
+    ind <- 1:dim(X)[1]
+  }
+  
+  mu <- m$mu.fv[ind]
+  shape <- 1 / m$sigma.fv[ind]
+  rate <- shape / mu
+  
+  # plot(density(p.obs), col = 'blue', lwd = 2)
+  # for (i in 1:100){
+  #   u <- rgamma(length(p.obs), shape = shape, rate = rate)
+  #   lines(density(u), col = 'red')
+  # }
+  # lines(density(p.obs), col = 'blue', lwd = 2)
+  
+  cuantiles <- c('q0.05', 'q0.50', 'q0.90', 'q0.95', 'q0.99')
+  q.obs <- quantile(p.obs[ind], probs = c(0.05, 0.5, 0.90, 0.95, 0.99))
+  names(q.obs) <- cuantiles
+  
+  q.sim <- data.frame(matrix(NA, ncol = 5))
+  colnames(q.sim) <- cuantiles
+  for (i in 1:n.sim){
+    u <- rgamma(length(p.obs[ind]), shape = shape, rate = rate)
+    q <- quantile(u, probs = c(0.05, 0.5, 0.90, 0.95, 0.99))
+    names(q) <- cuantiles
+    q.sim <- rbind(q.sim, q)
+  }
+  q.sim <- q.sim[-1, ]
+  
+  # plot(rep(q.obs[1], times = dim(q.sim)[1]), q.sim$q0.05, xlim = c(q.obs[1]-0.5, q.obs[5]+0.5), ylim = c(0, 10))
+  # points(rep(q.obs[2], times = dim(q.sim)[1]), q.sim$q0.50)
+  # points(rep(q.obs[3], times = dim(q.sim)[1]), q.sim$q0.90)
+  # points(rep(q.obs[4], times = dim(q.sim)[1]), q.sim$q0.95)
+  # points(rep(q.obs[5], times = dim(q.sim)[1]), q.sim$q0.99)
+  
+  bp <- boxplot(q.sim,
+          at = q.obs,                # 👈 coloca cada boxplot en la posición correspondiente
+          names = paste0(cuantiles, '.obs'),   # (opcional) etiquetas en el eje x
+          xlim = c(q.obs[1]-0.5, q.obs[5]+0.5),
+          ylim = c(0, max(q.sim)),
+          col = "lightblue",
+          main = paste("Boxplots alineados con q.obs", station),
+          ylab = "Valores simulados",
+          xlab = "Cuantiles observados")
+  
+  points(q.obs, bp$stats[3, ], col = "red", pch = 19, cex = 1.3)
+  abline(a = 0 , b = 1, col = 'red')
 }
-lines(density(p.obs), col = 'blue', lwd = 2)
 
-cuantiles <- c('q0.05', 'q0.50', 'q0.90', 'q0.95', 'q0.99')
-q.obs <- quantile(p.obs, probs = c(0.05, 0.5, 0.90, 0.95, 0.99))
-names(q.obs) <- cuantiles
-q.obs
 
-q.sim <- data.frame(matrix(NA, ncol = 5))
-colnames(q.sim) <- cuantiles
-for (i in 1:100){
-  u <- rgamma(length(p.obs), shape = shape, rate = rate)
-  q <- quantile(u, probs = c(0.05, 0.5, 0.90, 0.95, 0.99))
-  names(q) <- cuantiles
-  q.sim <- rbind(q.sim, q)
-}
-q.sim <- q.sim[-1, ]
-
-plot(rep(q.obs[1], times = dim(q.sim)[1]), q.sim$q0.05, xlim = c(q.obs[1]-0.5, q.obs[5]+0.5), ylim = c(0, 10))
-points(rep(q.obs[2], times = dim(q.sim)[1]), q.sim$q0.50)
-points(rep(q.obs[3], times = dim(q.sim)[1]), q.sim$q0.90)
-points(rep(q.obs[4], times = dim(q.sim)[1]), q.sim$q0.95)
-points(rep(q.obs[5], times = dim(q.sim)[1]), q.sim$q0.99)
-
-boxplot(q.sim,
-        at = q.obs,                # 👈 coloca cada boxplot en la posición correspondiente
-        names = round(q.obs, 2),   # (opcional) etiquetas en el eje x
-        xlim = c(q.obs[1]-0.5, q.obs[5]+0.5),
-        ylim = c(0, max(q.sim)),
-        col = "lightblue",
-        main = "Boxplots alineados con q.obs",
-        ylab = "Valores simulados",
-        xlab = "Cuantiles observados")
+bp.q.sim(estaciones[4])
 #------
