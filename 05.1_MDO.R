@@ -19,6 +19,11 @@ first <- which(aux)[1]
 last <- tail(which(aux), 1)
 date.first <- as.Date(paste0(df_days[first, c('dia.mes', 'mes', 't')], collapse = '-'), format = '%d-%m-%Y')
 date.last <- as.Date(paste0(df_days[last, c('dia.mes', 'mes', 't')], collapse = '-'), format = '%d-%m-%Y')
+#datos ERA5 hasta 2023 creo
+aux2 <- apply(global_df[, (8:ncol(global_df))], 1, function(row) all(!is.na(row)))
+last <- tail(which(aux2), 1)
+date.last2 <- global_df$date[last]
+
 
 cs <- function(t,harmonics=1, total) {
   # if(min(t) <0 | max(t) > 1){ stop(" t must be in [0,1] range")}
@@ -270,7 +275,7 @@ for (station in estaciones){
 
 saveRDS(MDO, 'MDO.rds')
 
-#----Comunalidades---
+#----Comunalidades----
 stations <- readRDS('stations.rds')
 stations.no.ateca <- stations[-nrow(stations), ]
 
@@ -422,7 +427,7 @@ for (station in estaciones){
   X <- MDO[[station]]$X
   
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = "%Y-%m-%d")
-  ind <- which(X$date >= date.first & X$date <= date.last)
+  ind <- which(X$date >= date.first & X$date <= date.last2)
   X_pc <- X[ind, ]
   
   #cat(dim(X_pc)[1], '\n')
