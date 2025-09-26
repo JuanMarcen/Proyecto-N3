@@ -372,6 +372,7 @@ ggplot(df_long, aes(x = variable, y = station, fill = color_val)) +
   )
 
 #----Model control----
+MDQ <- readRDS('MDQ.rds')
 for (station in estaciones){
   station.p <- paste0(station, '.p')
   shape <- 1 / MDQ[[station]]$M6$sigma.fv^2
@@ -383,4 +384,109 @@ for (station in estaciones){
   lines(density(y_sim), col = 'red', lwd = 2)
 }
 
+# comparison with uniform (0,1)
+# example 1 station
+library(overlapping)
+unif.comp <- function(station, mes = NULL){
+  m <- MDQ[[station]]$M6
+  X <- MDQ[[station]]$X
+  p.obs <- X[[paste0(station, '.p')]]
+  
+  if(!is.null(mes)){
+    ind <- which(X$mes %in% mes)
+  }else{
+    ind <- 1:dim(X)[1]
+  }
+  # cat(length(ind), '\n')
+  
+  mu <- m$mu.fv[ind]
+  shape <- 1 / m$sigma.fv[ind]
+  rate <- shape / mu
+  
+  u <- pgamma(p.obs[ind], shape = shape, rate = rate)
+  
+  # plot(density(u, from = 0, to = 1), col = 'blue', lwd = 2)
+  # lines(density(runif(length(u), 0, 1), from = 0, to = 1), col = 'red', lwd = 2)
+  
+  ov <- overlap(list(observed = u,
+                     theorical = seq(0, 1, length.out = length(u))),
+                type = '1',
+                plot = F)
+  cat(station, ':\t', 'Overlap con U(0,1): ', ov$OV, '\n')
+  
+  u_sorted <- sort(u)
+  # Cuantiles teóricos de una uniforme(0,1)
+  n <- length(u_sorted)
+  theoretical <- (1:n) / (n + 1)  # usar (i)/(n+1) es común para evitar 0 y 1 exactos
+  
+  # QQ-plot
+  plot(theoretical, u_sorted, 
+       main = paste0("QQ-plot vs Uniforme(0,1) ", station, ' - Overlap: ', round(ov$OV,4)), 
+       xlab = "Cuantiles teóricos U(0,1)", 
+       ylab = "Cuantiles empíricos de u")
+  abline(0, 1, col = "red", lwd = 2)
+}
 
+
+unif.comp(estaciones[4], mes = c(6,7,8))
+unif.comp(estaciones[4])
+
+# 100 simulaciones y mirar quantiles
+bp.q.sim <- function(station, n.sim = 100, mes = NULL){
+  m <- MDQ[[station]]$M6
+  X <- MDQ[[station]]$X
+  p.obs <- X[[paste0(station, '.p')]]
+  
+  if(!is.null(mes)){
+    ind <- which(X$mes %in% mes)
+  }else{
+    ind <- 1:dim(X)[1]
+  }
+  
+  mu <- m$mu.fv[ind]
+  shape <- 1 / m$sigma.fv[ind]
+  rate <- shape / mu
+  
+  # plot(density(p.obs), col = 'blue', lwd = 2)
+  # for (i in 1:100){
+  #   u <- rgamma(length(p.obs), shape = shape, rate = rate)
+  #   lines(density(u), col = 'red')
+  # }
+  # lines(density(p.obs), col = 'blue', lwd = 2)
+  
+  cuantiles <- c('q0.05', 'q0.50', 'q0.90', 'q0.95', 'q0.99')
+  q.obs <- quantile(p.obs[ind], probs = c(0.05, 0.5, 0.90, 0.95, 0.99))
+  names(q.obs) <- cuantiles
+  
+  q.sim <- data.frame(matrix(NA, ncol = 5))
+  colnames(q.sim) <- cuantiles
+  for (i in 1:n.sim){
+    u <- rgamma(length(p.obs[ind]), shape = shape, rate = rate)
+    q <- quantile(u, probs = c(0.05, 0.5, 0.90, 0.95, 0.99))
+    names(q) <- cuantiles
+    q.sim <- rbind(q.sim, q)
+  }
+  q.sim <- q.sim[-1, ]
+  
+  # plot(rep(q.obs[1], times = dim(q.sim)[1]), q.sim$q0.05, xlim = c(q.obs[1]-0.5, q.obs[5]+0.5), ylim = c(0, 10))
+  # points(rep(q.obs[2], times = dim(q.sim)[1]), q.sim$q0.50)
+  # points(rep(q.obs[3], times = dim(q.sim)[1]), q.sim$q0.90)
+  # points(rep(q.obs[4], times = dim(q.sim)[1]), q.sim$q0.95)
+  # points(rep(q.obs[5], times = dim(q.sim)[1]), q.sim$q0.99)
+  
+  bp <- boxplot(q.sim,
+                at = q.obs,                # 👈 coloca cada boxplot en la posición correspondiente
+                names = paste0(cuantiles, '.obs'),   # (opcional) etiquetas en el eje x
+                xlim = c(q.obs[1]-0.5, q.obs[5]+0.5),
+                ylim = c(0, max(q.sim)),
+                col = "lightblue",
+                main = paste("Boxplots alineados con q.obs", station),
+                ylab = "Valores simulados",
+                xlab = "Cuantiles observados")
+  
+  points(q.obs, bp$stats[3, ], col = "red", pch = 19, cex = 1.3)
+  abline(a = 0 , b = 1, col = 'red')
+}
+
+
+bp.q.sim(estaciones[4], mes = c(6,7,8))

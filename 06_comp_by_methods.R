@@ -18,15 +18,15 @@ ref.period <- as.Date(c('12/05/2011', '30/11/2023'), format = '%d/%m/%Y')
 # Anual mean precipitation in JJA
 n <- year(ref.period[2]) - year(ref.period[1]) + 1
 mean.obs.sim.station <- function(station, ref.period, data, model, 
-                                 n.sim = 100, by.months = FALSE){
+                                 n.sim = 100, months = NULL){
   # observed values
   X <- data[[station]]$X
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = "%Y-%m-%d")
   x.obs <- X[, c('date', paste0(station, '.p'))]
   
-  if (by.months == TRUE){
+  if (!is.null(months)){
     ind.ref <- which(x.obs$date >= ref.period[1] & x.obs$date <= ref.period[2]
-                     & month(x.obs$date) %in% c(6,7,8))
+                     & month(x.obs$date) %in% months)
   }else{
     ind.ref <- which(x.obs$date >= ref.period[1] & x.obs$date <= ref.period[2])
   }
@@ -66,7 +66,7 @@ mean.obs.sim.station <- function(station, ref.period, data, model,
 }
 
 mean.obs.sim.full <- function(estaciones, ref.period, data, model, 
-                              n.sim = 100, by.months = FALSE){
+                              n.sim = 100, months = NULL){
   N <- length(estaciones)
   df <- data.frame(matrix(NA, ncol = n.sim + 2, nrow = length(estaciones)))
   colnames(df) <- c('station', 'x.obs', paste0('y.sim.', 1:n.sim))
@@ -80,7 +80,7 @@ mean.obs.sim.full <- function(estaciones, ref.period, data, model,
                                          data = data,
                                          model = model,
                                          n.sim = n.sim,
-                                         by.months = by.months)
+                                         months = months)
     df[i, names.fill] <- mean.station
   }
   
@@ -106,8 +106,8 @@ mean.metric <- function(metric, data){
 }
 
 #MHQ
-df.amounts.M5 <- mean.obs.sim.full(estaciones, ref.period, MHQ, 'M4', n.sim = 100)
-df.amounts.M6 <- mean.obs.sim.full(estaciones, ref.period, MHQ, 'M6', n.sim = 100)
+df.amounts.M5 <- mean.obs.sim.full(estaciones[-4], ref.period, MHQ, 'M4', n.sim = 100)
+df.amounts.M6 <- mean.obs.sim.full(estaciones[-4], ref.period, MHQ, 'M6', n.sim = 100)
 
 mean.metric('SCC', df.amounts.M6)  
 mean.metric('SCC', df.amounts.M5)
@@ -117,7 +117,7 @@ mean.metric('RB', df.amounts.M6)
 mean.metric('RB', df.amounts.M5)
 
 #MDQ
-df.amounts.M5 <- mean.obs.sim.full(estaciones, ref.period, MDQ, 'M4', n.sim = 100)
+df.amounts.M5 <- mean.obs.sim.full(estaciones, ref.period, MDQ, 'M5', n.sim = 100)
 df.amounts.M6 <- mean.obs.sim.full(estaciones, ref.period, MDQ, 'M6', n.sim = 100)
 
 mean.metric('SCC', df.amounts.M6)  
