@@ -9,6 +9,17 @@ global_df$t <- year(global_df$date)
 global_df <- global_df[, -which(colnames(global_df) %in% c('zg300.', 'zg500.', 'zg700.', 
                                                            'zt300.', 'zt500.', 'zt700.'))]
 
+#periodo comun
+n <- length(estaciones)
+aux <- apply(df_days[, paste0(estaciones, '.p')], 1, function(row) all(!is.na(row)))
+
+first <- which(aux)[1]
+date.first <- as.Date(paste0(df_days[first, c('dia.mes', 'mes', 't')], collapse = '-'), format = '%d-%m-%Y')
+#datos ERA5 hasta 2023 creo
+aux <- apply(global_df[, (8:ncol(global_df))], 1, function(row) all(!is.na(row)))
+last <- tail(which(aux), 1)
+date.last <- global_df$date[last]
+
 #example 1 station
 cs <- function(t,harmonics=1, total) {
   # if(min(t) <0 | max(t) > 1){ stop(" t must be in [0,1] range")}
@@ -34,7 +45,7 @@ library(dplyr)
 df_days <- df_days %>%
   left_join(harm_l, by = 'l') 
 
-#----Data building and M1, M2, m3, M4----
+#----Data building and M1, M2, M3, M4----
 library(gamlss)
 X_list <- list()
 M1_list <- list()
@@ -73,13 +84,16 @@ for (station in estaciones){
     ))
   
   cat('Ajuste modelo M1: ', deparse(formula_M1), '\n')
-  M1_list[[station]] <- glm(formula = formula_M1, family = Gamma(link = 'log'), data = X_list[[station]])
+  M1_list[[station]] <- glm(formula = formula_M1, family = Gamma(link = 'log'), 
+                            data = X_list[[station]], control = glm.control(maxit = 200))
   
   cat('Ajuste modelo M2: ', deparse(formula_M2), '\n')
-  M2_list[[station]] <- glm(formula = formula_M2, family = Gamma(link = 'log'), data = X_list[[station]])
+  M2_list[[station]] <- glm(formula = formula_M2, family = Gamma(link = 'log'), 
+                            data = X_list[[station]], control = glm.control(maxit = 200))
   
   cat('Ajuste modelo M3: ', deparse(formula_M3), '\n')
-  M3_list[[station]] <- glm(formula = formula_M3, family = Gamma(link = 'log'), data = X_list[[station]])
+  M3_list[[station]] <- glm(formula = formula_M3, family = Gamma(link = 'log'), 
+                            data = X_list[[station]], control = glm.control(maxit = 200))
   
   #modelos con CV variante segun armonicos
   
@@ -110,7 +124,7 @@ rm(list = c('M1_list', 'M2_list', 'M3_list', 'M4_list', 'X_list'))
 saveRDS(MDQ, 'MDQ.rds')
 MDQ <- readRDS('MDQ.rds')
 
-#----model selection----
+#----model selection --> M5, M6----
 harmonics.l <- list(
   h1 = c('s.1.l', 'c.1.l'),
   h2 = c('s.2.l', 'c.2.l'),
@@ -135,23 +149,30 @@ step_glm <- function(initial_model,
   cat('AIC: ', AIC(mod.aux), '\n')
   
   #  asumimos que las covariables siempre son escogidas
-  if (!is.null(vars)) {
-    for (var in vars){
-      formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
-      mod.temp <- gamlss(formula.aux, 
-                         sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
-                         family = GA, 
-                         data = data,
-                         trace = F)
-      
-      if (AIC(mod.temp) < AIC(mod.aux)){
-        cat('Added: ', var, '\n')
-        cat('AIC: ', AIC(mod.temp), '\n')
-        mod.aux <- mod.temp
-      }
-    }
-    
-  }
+  # if (!is.null(vars)) {
+  #   for (var in vars){
+  #     formula.aux <- update(formula(mod.aux), paste(". ~ . +", var))
+  #     mod.temp <- gamlss(formula.aux, 
+  #                        sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
+  #                        family = GA, 
+  #                        data = data,
+  #                        trace = F)
+  #     
+  #     if (AIC(mod.temp) < AIC(mod.aux)){
+  #       cat('Added: ', var, '\n')
+  #       cat('AIC: ', AIC(mod.temp), '\n')
+  #       mod.aux <- mod.temp
+  #     }
+  #   }
+  #   
+  # }
+  
+  scope.aux <- update(formula(mod.aux), paste('. ~ . +', paste(vars, collapse = '+')))
+  
+  mod.aux <- step(mod.aux, scope = scope.aux, direction = 'both', trace = FALSE)
+  
+  cat('Model after ', 'AIC ', 'step algorithm for variables: ', deparse(formula(mod.aux)), '\n')
+  cat('AIC: ', AIC(mod.aux), '\n')
   
   
   for (h in harmonics.l){
@@ -182,51 +203,126 @@ step_glm <- function(initial_model,
 }
 
 
-mdq_list <- list()
-
+M5_list <- list()
 for (station in estaciones){
   cat('Estación ', station, '\n\n')
   
   mod_null <- gamlss(as.formula(paste(paste0(station, '.p'), '~ 1')), 
                      sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
                      family = GA, 
-                     data = X_list[[station]],
+                     data = MDQ[[station]]$X,
                      trace = F)
   
-  mdq_list[[station]] <- step_glm(mod_null, 
-                                  data = X_list[[station]], 
-                                  vars = colnames(X_list[[station]])[15:ncol(X)], 
+  M5_list[[station]] <- step_glm(mod_null, 
+                                  data = MDQ[[station]]$X, 
+                                  vars = colnames(MDQ[[station]]$X)[14:ncol(X)], 
                                   harmonics.l)
   
 }
 
 
-
-MDQ <- list()
 for (station in estaciones){
-  MDQ[[station]][['mdo']] <- mdq_list[[station]]
-  MDQ[[station]][['vars']] <- mdq_list[[station]]$coefficients
-  MDQ[[station]][['X']] <- X_list[[station]]
+  MDQ[[station]][['M5']] <- M5_list[[station]]
+  MDQ[[station]][['vars.M5']] <- M5_list[[station]]$mu.coefficients
 } 
+rm('M5_list')
+saveRDS(MDQ, 'MDQ.rds')
 
+# M6. Check transformations
+library(gam)
+deg_list <- list()
+for (station in estaciones){
+  vars <- names(MDQ[[station]]$vars.M5)
+  vars_era5 <- vars[grepl('z', vars)]
+  deg_list[[station]] <- rep(0, times = length(vars_era5))
+  names(deg_list[[station]]) <- vars_era5
+  # for (var in vars_era5){
+  #   plot(gam(formula = as.formula(paste('Y ~ s(', var, ')')), data = MDQ[[station]]$X),
+  #        main = paste(station, var, sep = '-'))
+  # }
+}
+
+#already done and all of them have dont look like deg 1 or 2, so we choose deg 3
+for (station in estaciones) {
+  station.p <- paste0(station, '.p')
+  # for (var in rev(names(deg_list[[station]]))){
+  #   plot(gam(formula = as.formula(paste(station.p, '~ s(', var, ')')), data = MDQ[[station]]$X),
+  #        main = paste(station, var, sep = '-'))
+  # }
+  # cat("Introduce los valores del vector de grados de la estación", station, 
+  #     '\n', "(separados por espacios, y pulsa Enter al final):\n")
+  # vec <- scan(what = numeric(), quiet = TRUE)
+  aux <- names(deg_list[[station]])
+  deg_list[[station]] <- rep(3, times = length(deg_list[[station]]))
+  names(deg_list[[station]]) <- aux
+  # dev.off()
+}
+
+saveRDS(deg_list, 'deg_list_MDQ.rds')
+deg_list <- readRDS('deg_list_MDQ.rds')
+
+#degree for the lag variable of rain
+is.lag <- c()
+for (station in estaciones){
+  is.lag[station] <- paste0(station, '.p.lag') %in% names(MDQ[[station]]$vars.M5)
+  cat(paste0(station, '.p.lag') %in% names(MDQ[[station]]$vars.M5), '\n')
+}
+
+for (station in rev(estaciones)){
+  station.p <- paste0(station, '.p')
+  plot(gam(formula = as.formula(paste0(station.p, ' ~ s(', station, '.p.lag)')), data = MDQ[[station]]$X), main = station)
+}
+
+deg_lag <- c(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 
+             3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
+names(deg_lag) <- estaciones
+deg_lag[!is.lag] <- 0
+
+# variable selection for final M6
+M6_list <- list()
+for (station in estaciones){
+  cat('Estación ', station, '\n\n')
+  
+  deg.list <- deg_list[[station]]
+  deg.lag <- deg_lag[station]
+  #formula_null <- as.formula(paste0('Y ~ ', paste0('poly(', station, '.p.day, ',deg.day, ')'), '+',
+  #                                  paste0('poly(', station, '.p.lag, ',deg.lag, ')')))
+  
+  mod_null <- gamlss(as.formula(paste(paste0(station, '.p'), '~ 1')), 
+                     sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
+                     family = GA, 
+                     data = MDQ[[station]]$X,
+                     trace = F)
+  
+  aux <- paste0('poly(', names(deg.list)[1], ', ', deg.list[1], ')')
+  for (i in 2:length(deg.list)){
+    aux <- c(aux,  paste0('poly(', names(deg.list)[i], ', ', deg.list[i], ')'))
+  }
+  if(deg.lag == 0){
+    vars <- aux
+  }else{
+    vars <- c(aux, 
+              paste0('poly(', station, '.p.lag, ', deg.lag, ')'))
+  }
+  
+  M6_list[[station]] <- step_glm(mod_null, 
+                                  data = MDQ[[station]]$X, 
+                                  vars = vars, 
+                                  harmonics.l)
+  
+}
+
+for (station in estaciones){
+  MDQ[[station]][['M6']] <- M6_list[[station]]
+  MDQ[[station]][['vars.M6']] <- M6_list[[station]]$mu.coefficients
+}
+rm('M6_list')
 saveRDS(MDQ, 'MDQ.rds')
 
 
-for (station in estaciones){
-  station.p <- paste0(station, '.p')
-  shape <- 1 / mdq_list[[station]]$sigma.fv^2
-  rate <- shape / mdq_list[[station]]$mu.fv
-  
-  hist(X_list[[station]][, station.p], breaks = 50, prob = T, main = station)
-  lines(density(X_list[[station]][, station.p]), col = 'blue')
-  y_sim <- rgamma(length(shape), shape = shape, rate = rate)
-  lines(density(y_sim), col = 'red', lwd = 2)
-}
-
-
 #----model comparison----
-AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 5))
-colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4')
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
 for (station in estaciones){
@@ -234,11 +330,11 @@ for (station in estaciones){
   M2 <- MDQ[[station]]$M2
   M3 <- MDQ[[station]]$M3
   M4 <- MDQ[[station]]$M4
-  # M5 <- MDQ[[station]]$M5
-  # M6 <- MDQ[[station]]$M6
+  M5 <- MDQ[[station]]$M5
+  M6 <- MDQ[[station]]$M6
   X <- MDQ[[station]]$X
-  AIC.df[station, 2:5] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
-                                  AIC(M4)), 2)
+  AIC.df[station, 2:7] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+                                  AIC(M4), AIC(M5), AIC(M6)), 2)
   
 }
 
@@ -274,4 +370,17 @@ ggplot(df_long, aes(x = variable, y = station, fill = color_val)) +
     axis.text.x = element_text(angle = 45, hjust = 1),
     panel.grid = element_blank()
   )
+
+#----Model control----
+for (station in estaciones){
+  station.p <- paste0(station, '.p')
+  shape <- 1 / MDQ[[station]]$M6$sigma.fv^2
+  rate <- shape / MDQ[[station]]$M6$mu.fv
+  
+  hist(MDQ[[station]]$X[, station.p], breaks = 50, prob = T, main = station)
+  lines(density(MDQ[[station]]$X[, station.p]), col = 'blue')
+  y_sim <- rgamma(length(shape), shape = shape, rate = rate)
+  lines(density(y_sim), col = 'red', lwd = 2)
+}
+
 
