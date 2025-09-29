@@ -460,14 +460,143 @@ unif.comp <- function(station, mes = NULL){
   
   # QQ-plot
   plot(theoretical, u_sorted, 
-       main = paste0("QQ-plot vs Uniforme(0,1) ", station, ' - Overlap: ', round(ov$OV,4)), 
+       main = paste0(station, ' - Overlap: ', round(ov$OV,4)), 
        xlab = "Cuantiles teóricos U(0,1)", 
        ylab = "Cuantiles empíricos de u")
   abline(0, 1, col = "red", lwd = 2)
+  
+  return(ov$OV)
 }
 
 
-unif.comp(estaciones[4], mes = c(6,7,8))
+par(mfrow = c(7,4))
+ov <- c()
+for (station in estaciones){
+  ov <- c(ov, unif.comp(station))
+}
+
+ov_jja <- c()
+for (station in estaciones){
+  ov_jja <- c(ov_jja, unif.comp(station, mes = c(6,7,8)))
+}
+
+
+#mapa DE OVERLAP
+library(sp)
+library(sf)
+library(ggplot2)
+load('Mapas/data_mapas.RData')
+df_mapa <- data.frame(
+  station = stations$STAID,
+  st_coordinates(stations),
+  ov = ov,
+  ov_jja = ov_jja
+)
+
+mapa_ov <- function(stations, mes = NULL){
+  
+  ov <- c()
+  for (station in estaciones){
+    ov <- c(ov, unif.comp(station))
+  }
+  
+  if (!is.null(mes)){
+    ov_mes <- c()
+    for (station in estaciones){
+      ov_mes <- c(ov_mes, unif.comp(station, mes = c(6,7,8)))
+    }
+    
+    data <- data.frame(
+      station = stations$STAID,
+      st_coordinates(stations),
+      ov = ov,
+      ov_mes = ov_mes
+    )
+    
+  }else{
+    data <- data.frame(
+      station = stations$STAID,
+      st_coordinates(stations),
+      ov = ov
+    )
+  }
+  
+  m1 <- ggplot(hypsobath) +
+    geom_sf(aes(fill = val_inf), color = NA) +
+    geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
+    coord_sf(xlim = st_coordinates(limits)[,1], 
+             ylim = st_coordinates(limits)[,2]) + 
+    scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
+                      breaks = levels(hypsobath$val_inf),
+                      guide = 'none') +
+    xlab("Longitud") + ylab("Latitud") +
+    
+    # no NA
+    geom_point(aes(x = X, y = Y, 
+                   size = ov, 
+                   color = stations$color), 
+               data = data) +
+    scale_size_continuous(name = "Overlap", 
+                          limits = range(c(data[['ov']], data[['ov_mes']]), na.rm = TRUE)) +
+    
+    ggrepel::geom_label_repel(aes(x = X, y = Y, 
+                                  label = round(ov, 3), 
+                                  color = stations$color), 
+                              size = 3.5,
+                              position = 'identity', label.size = 0.025,
+                              max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                              data = data,
+                              seed = 23) +
+    
+    scale_color_identity() +
+    ggtitle(label = 'Valores overlap todo el periodo')
+  
+  if(!is.null(mes)){
+    m2 <- ggplot(hypsobath) +
+      geom_sf(aes(fill = val_inf), color = NA) +
+      geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
+      coord_sf(xlim = st_coordinates(limits)[,1], 
+               ylim = st_coordinates(limits)[,2]) + 
+      scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
+                        breaks = levels(hypsobath$val_inf),
+                        guide = 'none') +
+      xlab("Longitud") + ylab("Latitud") +
+      
+      # no NA
+      geom_point(aes(x = X, y = Y, 
+                     size = ov_mes, 
+                     color = stations$color), 
+                 data = data) +
+      scale_size_continuous(name = "Overlap", 
+                            limits =range(c(data[['ov']], data[['ov_mes']]), na.rm = TRUE)) +
+      
+      ggrepel::geom_label_repel(aes(x = X, y = Y, 
+                                    label = round(ov_mes, 3), 
+                                    color = stations$color), 
+                                size = 3.5,
+                                position = 'identity', label.size = 0.025,
+                                max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                                data = data,
+                                seed = 23) +
+      
+      scale_color_identity() +
+      ggtitle(label = paste('Valores overlap según meses ', paste(mes, collapse = '-')))
+    
+  }
+  
+  if(!is.null(mes)){
+    m3 <- ggpubr::ggarrange(m1, m2, ncol = 2,
+                            common.legend = T, legend = 'bottom')
+  }else{
+    m3 <- m1
+  }
+  
+  return(m3)
+}
+
+
+mapa_ov(stations, mes = c(6,7,8))
+
 
 # 100 simulaciones y mirar quantiles
 bp.q.sim <- function(station, n.sim = 100, mes = NULL){
