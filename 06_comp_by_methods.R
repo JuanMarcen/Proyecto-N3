@@ -36,7 +36,7 @@ mean.obs.sim.station <- function(station, ref.period, data, model,
   
   x.obs.final <- x.obs %>% 
     group_by(year(date)) %>%
-    summarise(mean.p = mean(.data[[paste0(station, '.p')]], na.rm = TRUE))
+    summarise(mean.p = quantile(.data[[paste0(station, '.p')]], na.rm = TRUE, probs = 0.90))
   
   x.obs.final <- mean(x.obs.final[['mean.p']])
   #simulation values

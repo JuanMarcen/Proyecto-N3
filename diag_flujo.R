@@ -41,12 +41,14 @@ graph <- graph %>%
     label = 'Ajuste GLM',
     type = "type_a",
     node_aes = node_aes(
-      shape = 'rectangle',
+      shape = 'polygon',
       color = "steelblue",
       fillcolor = "lightblue",
       fontcolor = "black",
       width = 1,
-      height = 0.5
+      height = 0.5,
+      sides = 4,
+      orientation = 45
     ),
     node_data = node_data(
       value = 2.5
@@ -82,7 +84,7 @@ graph <- graph %>%
 #3
 graph <- graph %>% 
   add_node(
-    label = 'MDO',
+    label = 'IDK',
     type = "type_a",
     node_aes = node_aes(
       shape = 'rectangle',
@@ -99,9 +101,10 @@ graph <- graph %>%
 
 graph <- graph %>%
   add_edge(
-    from = 1, to = 3,
+    from = 2, to = 3,
     edge_aes = edge_aes(
-      color = "black"
+      color = "black",
+      label = 'SI'
     )
   )
 
@@ -128,14 +131,38 @@ graph <- graph %>%
     from = 2, to = 4,
     edge_aes = edge_aes(
       color = "black",
-      label = 'SI'
+      label = 'NO'
     )
   )
 
 #5
-graph <- graph %>% 
+graph <- graph %>%
   add_node(
-    label = 'IDK',
+  label = 'Selección \n covariables',
+  type = "type_a",
+  node_aes = node_aes(
+    shape = 'rectangle',
+    color = "steelblue",
+    fillcolor = "lightblue",
+    fontcolor = "black",
+    width = 1,
+    height = 0.5
+  ),
+  node_data = node_data(
+    value = 2.5
+  )
+) %>%
+  add_edge(
+    from = 1, to = 5,
+    edge_aes = edge_aes(
+      color = "black"
+    )
+  )
+
+#6 
+graph <- graph %>%
+  add_node(
+    label = 'glm final',
     type = "type_a",
     node_aes = node_aes(
       shape = 'rectangle',
@@ -148,14 +175,17 @@ graph <- graph %>%
     node_data = node_data(
       value = 2.5
     )
-  )
-
-graph <- graph %>%
+  ) %>%
   add_edge(
-    from = 2, to = 5,
+    from = 5, to = 6,
     edge_aes = edge_aes(
-      color = "black",
-      label = 'NO'
+      color = "black"
+    )
+  )%>%
+  add_edge(
+    from = 6, to = 1,
+    edge_aes = edge_aes(
+      color = "black"
     )
   )
 

@@ -421,15 +421,128 @@ unif.comp <- function(station, mes = NULL){
   
   # QQ-plot
   plot(theoretical, u_sorted, 
-       main = paste0("QQ-plot vs Uniforme(0,1) ", station, ' - Overlap: ', round(ov$OV,4)), 
+       main = paste0(station, ' - Overlap: ', round(ov$OV,4)), 
        xlab = "Cuantiles teóricos U(0,1)", 
        ylab = "Cuantiles empíricos de u")
   abline(0, 1, col = "red", lwd = 2)
+  
+  return(ov$OV)
+}
+
+library(sp)
+library(sf)
+library(ggplot2)
+load('Mapas/data_mapas.RData')
+# df_mapa <- data.frame(
+#   station = stations$STAID,
+#   st_coordinates(stations),
+#   ov = ov,
+#   ov_jja = ov_jja
+# )
+
+mapa_ov <- function(stations, mes = NULL){
+  
+  ov <- c()
+  for (station in estaciones){
+    ov <- c(ov, unif.comp(station))
+  }
+  
+  if (!is.null(mes)){
+    ov_mes <- c()
+    for (station in estaciones){
+      ov_mes <- c(ov_mes, unif.comp(station, mes = c(6,7,8)))
+    }
+    
+    data <- data.frame(
+      station = stations$STAID,
+      st_coordinates(stations),
+      ov = ov,
+      ov_mes = ov_mes
+    )
+    
+  }else{
+    data <- data.frame(
+      station = stations$STAID,
+      st_coordinates(stations),
+      ov = ov
+    )
+  }
+  
+  m1 <- ggplot(hypsobath) +
+    geom_sf(aes(fill = val_inf), color = NA) +
+    geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
+    coord_sf(xlim = st_coordinates(limits)[,1], 
+             ylim = st_coordinates(limits)[,2]) + 
+    scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
+                      breaks = levels(hypsobath$val_inf),
+                      guide = 'none') +
+    xlab("Longitud") + ylab("Latitud") +
+    
+    # no NA
+    geom_point(aes(x = X, y = Y, 
+                   size = ov, 
+                   color = stations$color), 
+               data = data) +
+    scale_size_continuous(name = "Overlap", 
+                          limits = range(c(data[['ov']], data[['ov_mes']]), na.rm = TRUE)) +
+    
+    ggrepel::geom_label_repel(aes(x = X, y = Y, 
+                                  label = round(ov, 3), 
+                                  color = stations$color), 
+                              size = 3.5,
+                              position = 'identity', label.size = 0.025,
+                              max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                              data = data,
+                              seed = 23) +
+    
+    scale_color_identity() +
+    ggtitle(label = 'Valores overlap todo el periodo')
+  
+  if(!is.null(mes)){
+    m2 <- ggplot(hypsobath) +
+      geom_sf(aes(fill = val_inf), color = NA) +
+      geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
+      coord_sf(xlim = st_coordinates(limits)[,1], 
+               ylim = st_coordinates(limits)[,2]) + 
+      scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
+                        breaks = levels(hypsobath$val_inf),
+                        guide = 'none') +
+      xlab("Longitud") + ylab("Latitud") +
+      
+      # no NA
+      geom_point(aes(x = X, y = Y, 
+                     size = ov_mes, 
+                     color = stations$color), 
+                 data = data) +
+      scale_size_continuous(name = "Overlap", 
+                            limits =range(c(data[['ov']], data[['ov_mes']]), na.rm = TRUE)) +
+      
+      ggrepel::geom_label_repel(aes(x = X, y = Y, 
+                                    label = round(ov_mes, 3), 
+                                    color = stations$color), 
+                                size = 3.5,
+                                position = 'identity', label.size = 0.025,
+                                max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                                data = data,
+                                seed = 23) +
+      
+      scale_color_identity() +
+      ggtitle(label = paste('Valores overlap según meses ', paste(mes, collapse = '-')))
+    
+  }
+  
+  if(!is.null(mes)){
+    m3 <- ggpubr::ggarrange(m1, m2, ncol = 2,
+                            common.legend = T, legend = 'bottom')
+  }else{
+    m3 <- m1
+  }
+  
+  return(m3)
 }
 
 
-unif.comp(estaciones[4], mes = c(6,7,8))
-unif.comp(estaciones[4])
+mapa_ov(stations, mes = c(6,7,8))
 
 # 100 simulaciones y mirar quantiles
 bp.q.sim <- function(station, n.sim = 100, mes = NULL){
@@ -447,13 +560,6 @@ bp.q.sim <- function(station, n.sim = 100, mes = NULL){
   shape <- 1 / m$sigma.fv[ind]
   rate <- shape / mu
   
-  # plot(density(p.obs), col = 'blue', lwd = 2)
-  # for (i in 1:100){
-  #   u <- rgamma(length(p.obs), shape = shape, rate = rate)
-  #   lines(density(u), col = 'red')
-  # }
-  # lines(density(p.obs), col = 'blue', lwd = 2)
-  
   cuantiles <- c('q0.05', 'q0.50', 'q0.90', 'q0.95', 'q0.99')
   q.obs <- quantile(p.obs[ind], probs = c(0.05, 0.5, 0.90, 0.95, 0.99))
   names(q.obs) <- cuantiles
@@ -468,15 +574,9 @@ bp.q.sim <- function(station, n.sim = 100, mes = NULL){
   }
   q.sim <- q.sim[-1, ]
   
-  # plot(rep(q.obs[1], times = dim(q.sim)[1]), q.sim$q0.05, xlim = c(q.obs[1]-0.5, q.obs[5]+0.5), ylim = c(0, 10))
-  # points(rep(q.obs[2], times = dim(q.sim)[1]), q.sim$q0.50)
-  # points(rep(q.obs[3], times = dim(q.sim)[1]), q.sim$q0.90)
-  # points(rep(q.obs[4], times = dim(q.sim)[1]), q.sim$q0.95)
-  # points(rep(q.obs[5], times = dim(q.sim)[1]), q.sim$q0.99)
-  
   bp <- boxplot(q.sim,
-                at = q.obs,                # 👈 coloca cada boxplot en la posición correspondiente
-                names = paste0(cuantiles, '.obs'),   # (opcional) etiquetas en el eje x
+                at = q.obs,               
+                names = paste0(cuantiles, '.obs'),  
                 xlim = c(q.obs[1]-0.5, q.obs[5]+0.5),
                 ylim = c(0, max(q.sim)),
                 col = "lightblue",
@@ -484,9 +584,62 @@ bp.q.sim <- function(station, n.sim = 100, mes = NULL){
                 ylab = "Valores simulados",
                 xlab = "Cuantiles observados")
   
-  points(q.obs, bp$stats[3, ], col = "red", pch = 19, cex = 1.3)
-  abline(a = 0 , b = 1, col = 'red')
+  #points(q.obs, bp$stats[3, ], col = "black", pch = 19, cex = 1.3)
+  lines(q.obs, q.obs, col = "red", pch = 19, cex = 1.3, type = 'b')
+  #abline(a = 0 , b = 1, col = 'red')
 }
 
 
-bp.q.sim(estaciones[4], mes = c(6,7,8))
+par(mfrow = c(4,2))
+for (station in estaciones){
+  bp.q.sim(station)
+  bp.q.sim(station, mes = c(6, 7, 8))
+}
+
+#----VALIDACIÓN----
+library(gamlss)
+df.cv <- data.frame(
+  station = estaciones,
+  cv = rep(0, times = length(estaciones))
+)
+for (i in 1:length(estaciones)){
+  station <- estaciones[i]
+  m <- MDQ[[station]]$M6
+  X <- MDQ[[station]]$X
+  
+  formula <- m$mu.formula
+  
+  cv <- gamlssCV(formula, 
+                 sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)),
+                 family = GA, 
+                 data = X, 
+                 K = 10)
+  df.cv[i, 'cv'] <- cv$CV
+}
+
+
+set.seed(123)
+k <- 10
+folds <- sample(rep(1:k, length.out = nrow(X)))
+
+resultados <- data.frame(MAE = numeric(k), RMSE = numeric(k))
+
+for (i in 1:k) {
+  train <- X[folds != i, ]
+  test  <- X[folds == i, ]
+  
+  # Usa TU modelo seleccionado (misma fórmula, familia, etc.)
+  m <- gamlss(formula, 
+                sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)),
+                family = GA, 
+                data = train)
+  
+  pred <- predict(m, newdata = test, what = "mu", type = "response")
+  obs <- test[[paste0(station, '.p')]]
+  
+  resultados$MAE[i]  <- mean(abs(obs - pred))
+  resultados$RMSE[i] <- sqrt(mean((obs - pred)^2))
+}
+
+# Promedio del rendimiento fuera de muestra
+colMeans(resultados)

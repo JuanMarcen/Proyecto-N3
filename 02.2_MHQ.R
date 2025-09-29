@@ -486,12 +486,12 @@ library(sp)
 library(sf)
 library(ggplot2)
 load('Mapas/data_mapas.RData')
-df_mapa <- data.frame(
-  station = stations$STAID,
-  st_coordinates(stations),
-  ov = ov,
-  ov_jja = ov_jja
-)
+# df_mapa <- data.frame(
+#   station = stations$STAID,
+#   st_coordinates(stations),
+#   ov = ov,
+#   ov_jja = ov_jja
+# )
 
 mapa_ov <- function(stations, mes = NULL){
   
@@ -614,13 +614,6 @@ bp.q.sim <- function(station, n.sim = 100, mes = NULL){
   shape <- 1 / m$sigma.fv[ind]
   rate <- shape / mu
   
-  # plot(density(p.obs), col = 'blue', lwd = 2)
-  # for (i in 1:100){
-  #   u <- rgamma(length(p.obs), shape = shape, rate = rate)
-  #   lines(density(u), col = 'red')
-  # }
-  # lines(density(p.obs), col = 'blue', lwd = 2)
-  
   cuantiles <- c('q0.05', 'q0.50', 'q0.90', 'q0.95', 'q0.99')
   q.obs <- quantile(p.obs[ind], probs = c(0.05, 0.5, 0.90, 0.95, 0.99))
   names(q.obs) <- cuantiles
@@ -635,15 +628,9 @@ bp.q.sim <- function(station, n.sim = 100, mes = NULL){
   }
   q.sim <- q.sim[-1, ]
   
-  # plot(rep(q.obs[1], times = dim(q.sim)[1]), q.sim$q0.05, xlim = c(q.obs[1]-0.5, q.obs[5]+0.5), ylim = c(0, 10))
-  # points(rep(q.obs[2], times = dim(q.sim)[1]), q.sim$q0.50)
-  # points(rep(q.obs[3], times = dim(q.sim)[1]), q.sim$q0.90)
-  # points(rep(q.obs[4], times = dim(q.sim)[1]), q.sim$q0.95)
-  # points(rep(q.obs[5], times = dim(q.sim)[1]), q.sim$q0.99)
-  
   bp <- boxplot(q.sim,
-          at = q.obs,                # 👈 coloca cada boxplot en la posición correspondiente
-          names = paste0(cuantiles, '.obs'),   # (opcional) etiquetas en el eje x
+          at = q.obs,               
+          names = paste0(cuantiles, '.obs'),  
           xlim = c(q.obs[1]-0.5, q.obs[5]+0.5),
           ylim = c(0, max(q.sim)),
           col = "lightblue",
@@ -651,10 +638,16 @@ bp.q.sim <- function(station, n.sim = 100, mes = NULL){
           ylab = "Valores simulados",
           xlab = "Cuantiles observados")
   
-  points(q.obs, bp$stats[3, ], col = "red", pch = 19, cex = 1.3)
-  abline(a = 0 , b = 1, col = 'red')
+  #points(q.obs, bp$stats[3, ], col = "black", pch = 19, cex = 1.3)
+  lines(q.obs, q.obs, col = "red", pch = 19, cex = 1.3, type = 'b')
+  #abline(a = 0 , b = 1, col = 'red')
 }
 
 
-bp.q.sim(estaciones[4])
+par(mfrow = c(4,2))
+for (station in estaciones){
+  bp.q.sim(station)
+  bp.q.sim(station, mes = c(6, 7, 8))
+}
+
 #------
