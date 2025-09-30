@@ -320,9 +320,36 @@ rm('M6_list')
 saveRDS(MDQ, 'MDQ.rds')
 
 
+# M7 (interacción armonicos y lag) + step
+M7_list <- list()
+for (station in estaciones){
+  M6 <- MDQ[[station]]$M6
+  vars <- c(labels(terms(M6$mu.formula)), 
+            paste0(station, '.p.lag:', c('c.1.l', 's.1.l')))
+  vars <- setdiff(vars, unlist(harmonics.l))
+  
+  mod_null <- gamlss(as.formula(paste(paste0(station, '.p'), '~ 1')), 
+                     sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
+                     family = GA, 
+                     data = MDQ[[station]]$X,
+                     trace = F)
+  
+  M7_list[[station]] <- step_glm(mod_null, 
+                                  data = MDQ[[station]]$X, 
+                                  vars = vars, 
+                                  harmonics.l)
+}
+
+for (station in estaciones){
+  MDQ[[station]][['M7']] <- M7_list[[station]]
+  MDQ[[station]][['vars.M7']] <- M7_list[[station]]$mu.coefficients
+}
+rm('M7_list')
+saveRDS(MDQ, 'MDQ.rds')
+
 #----model comparison----
 AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
-colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
 for (station in estaciones){
@@ -332,9 +359,11 @@ for (station in estaciones){
   M4 <- MDQ[[station]]$M4
   M5 <- MDQ[[station]]$M5
   M6 <- MDQ[[station]]$M6
+  M7 <- MDQ[[station]]$M7
   X <- MDQ[[station]]$X
-  AIC.df[station, 2:7] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
-                                  AIC(M4), AIC(M5), AIC(M6)), 2)
+  AIC.df[station, 2:8] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+                                  AIC(M4), AIC(M5), AIC(M6),
+                                  AIC(M7)), 2)
   
 }
 

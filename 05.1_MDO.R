@@ -275,6 +275,30 @@ for (station in estaciones){
 
 saveRDS(MDO, 'MDO.rds')
 
+# M6 (interacción armonicos y lag) + step
+M6_list <- list()
+for (station in estaciones){
+  M5 <- MDO[[station]]$M5
+  vars <- c(labels(terms(M5$formula)), 
+            paste0(station, '.p.lag:', c('c.1.l', 's.1.l')))
+  vars <- setdiff(vars, unlist(harmonics.l))
+  
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = MDO[[station]]$X)
+  
+  M6_list[[station]] <- step_rlog(mod_null, 
+                                  data = MDO[[station]]$X, 
+                                  vars = vars, 
+                                  harmonics.l)
+}
+
+for (station in estaciones){
+  MDO[[station]][['M6']] <- M6_list[[station]]
+  MDO[[station]][['vars.M6']] <- M6_list[[station]]$coefficients
+}
+rm('M6_list')
+saveRDS(MDO, 'MDO.rds')
+
+
 #----Comunalidades----
 stations <- readRDS('stations.rds')
 stations.no.ateca <- stations[-nrow(stations), ]
@@ -402,18 +426,18 @@ for (station in estaciones){
 }
 
 #plot all AUC and Roc curves: Comparison of models
-auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 6))
-colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5')
+auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
+colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
 rownames(auc.df) <- estaciones
 auc.df$station <- estaciones
 
-auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 6))
-colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5')
+auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
+colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
 rownames(auc.df.pc) <- estaciones
 auc.df.pc$station <- estaciones
 
-AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 6))
-colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5')
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
 
@@ -423,7 +447,7 @@ for (station in estaciones){
   M3 <- MDO[[station]]$M3
   M4 <- MDO[[station]]$M4
   M5 <- MDO[[station]]$M5
-  # M6 <- MDO[[station]]$M6
+  M6 <- MDO[[station]]$M6
   X <- MDO[[station]]$X
   
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = "%Y-%m-%d")
@@ -437,23 +461,22 @@ for (station in estaciones){
   roc_M3 <- roc(X$Y, predict(M3, type = 'response'))
   roc_M4 <- roc(X$Y, predict(M4, type = 'response'))
   roc_M5 <- roc(X$Y, predict(M5, type = 'response'))
-  # roc_M6 <- roc(X$Y, predict(M6, type = 'response'))
+  roc_M6 <- roc(X$Y, predict(M6, type = 'response'))
   
   roc_M1.pc <- roc(X$Y[ind], M1$fitted.values[ind])
   roc_M2.pc <- roc(X$Y[ind], M2$fitted.values[ind])
   roc_M3.pc <- roc(X$Y[ind], M3$fitted.values[ind])
   roc_M4.pc <- roc(X$Y[ind], M4$fitted.values[ind])
   roc_M5.pc <- roc(X$Y[ind], M5$fitted.values[ind])
-  # roc_M6.pc <- roc(X$Y[ind], M6$fitted.values[ind])
+  roc_M6.pc <- roc(X$Y[ind], M6$fitted.values[ind])
   
-  auc.df[station, 2:6] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
-                                  auc(roc_M4), auc(roc_M5)), 3)
-  auc.df.pc[station, 2:6] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
-                                     auc(roc_M4.pc), auc(roc_M5.pc)), 3)
-  AIC.df[station, 2:6] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
-                                  AIC(M4), AIC(M5)), 2)
-  # BIC.df[station, 2:7] <- round(c(BIC(M1), BIC(M2), BIC(M3), 
-  #                                 BIC(M4), BIC(M5), BIC(M6)), 2)
+  auc.df[station, 2:7] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
+                                  auc(roc_M4), auc(roc_M5), auc(roc_M6)), 3)
+  auc.df.pc[station, 2:7] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
+                                     auc(roc_M4.pc), auc(roc_M5.pc), auc(roc_M6.pc)), 3)
+  AIC.df[station, 2:7] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+                                  AIC(M4), AIC(M5), AIC(M6)), 2)
+  
 }
 # library(writexl)
 # write_xlsx(AIC.df, "borrar.xlsx")
@@ -521,4 +544,4 @@ mapa_calor <- function(df, tipo = c("AUC", "AIC")) {
 mapa_calor(auc.df, tipo = 'AUC')
 mapa_calor(auc.df.pc, tipo = 'AUC')
 mapa_calor(AIC.df, tipo = 'AIC')
-mapa_calor(BIC.df[, -5], tipo = 'AIC')
+
