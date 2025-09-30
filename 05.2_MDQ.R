@@ -348,7 +348,7 @@ rm('M7_list')
 saveRDS(MDQ, 'MDQ.rds')
 
 #----model comparison----
-AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 8))
 colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
