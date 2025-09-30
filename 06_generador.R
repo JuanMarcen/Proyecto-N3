@@ -14,6 +14,12 @@ library(tidyr)
 
 stations <- readRDS('stations.rds')
 estaciones <- stations$STAID
+
+global_df <- readRDS('global_df.rds')
+global_df$t <- year(global_df$date)
+global_df <- global_df[, -which(colnames(global_df) %in% c('zg300.', 'zg500.', 'zg700.', 
+                                                           'zt300.', 'zt500.', 'zt700.'))]
+
 #fast check
 for (station in estaciones){
   m <- MDO[[station]]$M5
@@ -32,6 +38,7 @@ for (station in estaciones){
 daily.generator <- function(station, 
                       data.mo, mo, 
                       data.mq, mq, 
+                      data.df,
                       n.sim){
   
   mo <- data.mo[[station]][[mo]]
@@ -45,55 +52,120 @@ daily.generator <- function(station,
   Xq$date <- as.Date(paste(Xq$t, Xq$mes, Xq$dia.mes, sep = "-"), 
                      format = '%Y-%m-%d')
   
-  df.gen <- Xo[, c('t', 'mes', 'dia.mes')] %>%
-    inner_join(Xq, by = c('t', 'mes', 'dia.mes')) %>%
-    select(t, mes, dia.mes) %>%
-    mutate(
-      date = as.Date(paste(t, mes, dia.mes, sep = "-"),
-                     format = '%Y-%m-%d')
-    ) %>%
-    relocate(date, .before = t)
+  # in order to predict correctly (USE THIS ONE TO PREDICT)
+  mq2 <- gamlss(mq$mu.formula, 
+                sigma.fo = mq$sigma.formula, 
+                family = GA, 
+                data = Xq,trace = F)
   
-  ind1 <- which(Xo$date %in% df.gen$date)
-  ind2 <- which(Xq$date %in% df.gen$date)
   
-  df.gen <- df.gen %>%
-    mutate(
-      prob.p = mo$fitted.values[ind1], #change this for predict of a new df?
-      mu.fv = mq$mu.fv[ind2],
-      sigma.fv = mq$sigma.fv[ind2],
-      shape.fv = 1 / mq$sigma.fv[ind2]^2,
-      rate.fv = 1 / mq$sigma.fv[ind2]^2 / mq$mu.fv[ind2] #shape/mu
-    )
+  #dataframe with climatic data
+  X_data <- data.df %>%
+    filter(STAID == station) %>%
+    select(date) %>%
+    inner_join(Xo, by = 'date') %>%
+    as.data.frame()
+  X_data <- X_data[, names(Xq)] # predict in gamlss, requires the same order in the columns
   
-  roc <- suppressMessages(
-    roc(Xo$Y, mo$fitted.values)
+  
+  #new values of mu and sigma 
+  mu.new <- suppressWarnings(
+    predict(mq2, newdata = X_data, what = 'mu', type = 'response')
   )
-  c <- as.numeric(coords(roc, "best", ret = "threshold"))
+  
+  sigma.new <- suppressWarnings(
+    predict(mq2, newdata = X_data, what = 'sigma', type = 'response')
+  )
+  
+  # df.gen <- Xo[, c('t', 'mes', 'dia.mes')] %>%
+  #   inner_join(Xq, by = c('t', 'mes', 'dia.mes')) %>%
+  #   select(t, mes, dia.mes) %>%
+  #   mutate(
+  #     date = as.Date(paste(t, mes, dia.mes, sep = "-"),
+  #                    format = '%Y-%m-%d')
+  #   ) %>%
+  #   relocate(date, .before = t)
+  
+  
+  # ind1 <- which(Xo$date %in% df.gen$date)
+  # ind2 <- which(df.gen$date %in% Xq$date)
+  
+  df.gen <- Xo %>% select(date)
   
   df.gen <- df.gen %>%
     mutate(
-      p.day.obs = Xq[ind2, paste0(station, '.p')]
-    ) %>%
-    rowwise() %>%
-    mutate(
-      p.day.sim = list(
-        if (prob.p > c) rgamma(n.sim, shape = shape.fv, rate = rate.fv) else rep(0, n.sim)
-      )
-    ) %>%
-    ungroup()
+      prob.p = mo$fitted.values, #change this for predict of a new df?
+      mu.fv = mu.new,
+      sigma.fv = sigma.new,
+      shape.fv = 1 / sigma.new^2,
+      rate.fv = 1 / sigma.new^2 / mu.new, #shape/mu
+      p.day.obs = X_data[[paste0(station, '.p')]]
+    )
+  #rain = 1 or no rain = 0
+  # df.gen <- df.gen %>%
+  #   rowwise() %>%
+  #   mutate(
+  #     rain = ifelse(runif(1, min = 0, max = 1) <= prob.p, 1, 0)
+  #   ) %>%
+  #   ungroup()
+  # 
+  # df.gen <- df.gen %>%
+  #   mutate(
+  #     
+  #   ) %>%
+  #   rowwise() %>%
+  #   mutate(
+  #     p.day.sim = ifelse(rain == 1, rgamma(1, shape = shape.fv, rate = rate.fv), 0)
+  #   ) %>%
+  #   ungroup()
+  #   
   
-  df.gen <- df.gen %>%
-    unnest_wider(p.day.sim, names_sep = ".")
+  
+  # df.gen <- df.gen %>%
+  #   mutate(
+  #     p.day.obs = Xq[ind2, paste0(station, '.p')]
+  #   ) %>%
+  #   rowwise() %>%
+  #   mutate(
+  #     p.day.sim = list(
+  #       if (prob.p > c) rgamma(n.sim, shape = shape.fv, rate = rate.fv) else rep(0, n.sim)
+  #     )
+  #   ) %>%
+  #   ungroup()
+  # 
+  # df.gen <- df.gen %>%
+  #   unnest_wider(p.day.sim, names_sep = ".")
+  
+  # Matriz de Bernoulli (lluvia o no)
+  n_days <- nrow(df.gen)
+  rain_matrix <- matrix(runif(n_days * n.sim), nrow = n_days, ncol = n.sim) <= df.gen$prob.p
+  
+  # Matriz de gamma (simulaciones de lluvia)
+  gamma_matrix <- matrix(rgamma(n_days * n.sim, shape = rep(df.gen$shape.fv, n.sim),
+                                rate = rep(df.gen$rate.fv, n.sim)), 
+                         nrow = n_days, ncol = n.sim)
+  
+  # Asignamos 0 donde no llueve
+  gamma_matrix[!rain_matrix] <- 0
+  
+  # Convertimos la matriz a columnas en df.gen
+  sim_df <- as.data.frame(gamma_matrix)
+  names(sim_df) <- paste0("p.day.sim.", 1:n.sim)
+  
+  df.gen <- cbind(df.gen, sim_df)
   
   return(df.gen)
 }
   
 
 
-basura <- daily.generator(estaciones[4], MDO, 'M5', MDQ, 'M6', n.sim = 100)
+basura <- daily.generator(station = estaciones[4], 
+                          data.mo = MDO, mo = 'M5', 
+                          data.mq = MDQ, mq = 'M6', 
+                          data.df = global_df, 
+                          n.sim = 100)
 plot(density(basura[['p.day.obs']]), col = 'blue', lwd = 2,
-     xlim = c(0, max(basura[,paste0('p.day.sim.', 1:10)])))
+     xlim = c(0, max(basura[,paste0('p.day.sim.', 1:100)])))
 for(i in 1:100){
   lines(
     density(basura[[paste0('p.day.sim.', i)]]), 
@@ -101,6 +173,10 @@ for(i in 1:100){
     )
 }
 lines(density(basura[['p.day.obs']]), col = 'blue', lwd = 2)
+
+max <- apply(basura[, c('p.day.obs', paste0('p.day.sim.', 1:100))], 2, max)
+boxplot(max)
+points(max[1], pch = 19, col = 'red')
 
 hourly.generator <- function(station, 
                             data.mo, mo, 
