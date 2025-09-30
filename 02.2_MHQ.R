@@ -439,7 +439,7 @@ unif.comp <- function(station, mes = NULL){
   # cat(length(ind), '\n')
   
   mu <- m$mu.fv[ind]
-  shape <- 1 / m$sigma.fv[ind]
+  shape <- 1 / m$sigma.fv[ind]^2
   rate <- shape / mu
   
   u <- pgamma(p.obs[ind], shape = shape, rate = rate)

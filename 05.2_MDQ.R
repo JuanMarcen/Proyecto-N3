@@ -400,7 +400,7 @@ unif.comp <- function(station, mes = NULL){
   # cat(length(ind), '\n')
   
   mu <- m$mu.fv[ind]
-  shape <- 1 / m$sigma.fv[ind]
+  shape <- 1 / m$sigma.fv[ind]^2
   rate <- shape / mu
   
   u <- pgamma(p.obs[ind], shape = shape, rate = rate)
@@ -557,7 +557,7 @@ bp.q.sim <- function(station, n.sim = 100, mes = NULL){
   }
   
   mu <- m$mu.fv[ind]
-  shape <- 1 / m$sigma.fv[ind]
+  shape <- 1 / m$sigma.fv[ind]^2
   rate <- shape / mu
   
   cuantiles <- c('q0.05', 'q0.50', 'q0.90', 'q0.95', 'q0.99')

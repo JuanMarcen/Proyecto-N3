@@ -333,7 +333,7 @@ for (station in estaciones){
   MHO[[station]][['vars.M6']] <- M6_list[[station]]$coefficients
 } 
 
-saveRDS(MHO, 'MHO.rds')
+saveRDS(MHO, 'MHO2.rds')
 rm(list = c('M6_list', 'M5_list', 'X'))
 MHO <- readRDS('MHO.rds')
 
