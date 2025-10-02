@@ -337,32 +337,71 @@ saveRDS(MHO, 'MHO2.rds')
 rm(list = c('M6_list', 'M5_list', 'X'))
 MHO <- readRDS('MHO.rds')
 
-# SELECCIÓN AUTOMÁTICA DE MODELO SEGÚN ESTUDIO DE MODELOS ANIDADOS (STAND BY)
-data <- X_list[[15]]
-initial_model <- glm(Y ~ 1, family = binomial(logit), data = data)
 
-station <- estaciones[15]
-vars <- c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
-          paste0('poly(', station, '.p.lag, ',deg.lag, ')'),
-          paste0(station,'.p.lag:',station,'.p.day'))
-
-#ALGORTIHM DID NOT CONVERGE?
-for (i in 1:length(vars)){
-  mod.aux <- update(initial_model, data = data, formula = as.formula(paste(". ~ . +", vars[i])),
-                    control = glm.control(maxit = 50))
+# M7: (interacción armonicos y lag) + step
+M7_list <- list()
+for (station in estaciones){
+  M5 <- MHO[[station]]$M5
+  vars <- c(labels(terms(M5$formula)), 
+            paste0(station, '.p.lag:', c('c.1.l', 's.1.l', 's.1.h', 'c.1.h')))
+  vars <- setdiff(vars, c(unlist(harmonics.l), unlist(harmonics.h)))
   
-  aux <- anova(initial_model, mod.aux)
-  pval <- aux$`Pr(>Chi)`[2]
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = MHO[[station]]$X)
   
-  if (pval < 0.05){
-    initial_model <- mod.aux
-    cat('Variable añadida: ', vars[i], '\n')
-  }
+  M7_list[[station]] <- step_rlog(mod_null, 
+                                  data = MHO[[station]]$X, 
+                                  vars = vars, 
+                                  harmonics.l = harmonics.l,
+                                  harmonics.h = harmonics.h)
 }
 
+for (station in estaciones){
+  MHO[[station]][['M7']] <- M7_list[[station]]
+  MHO[[station]][['vars.M7']] <- M7_list[[station]]$coefficients
+}
+rm('M7_list')
+saveRDS(MHO, 'MHO.rds')
 
-#----Estudio comunalidades (DIRIA QUE MEJOR PARA DIARIAS)----
-# stand by 
+MHO_sub <- lapply(MHO, function(station) {
+  station[c("X", "M5", "vars.M5", "M6", "vars.M6", "M7", "vars.M7")]
+})
+saveRDS(MHO_sub, 'MHO_sub.rds')
+
+# SELECCIÓN AUTOMÁTICA DE MODELO SEGÚN ESTUDIO DE MODELOS ANIDADOS (STAND BY)
+# M8
+M8_list <- list()
+for (station in estaciones){
+  cat('Estación ', station, '\n')
+  
+  X <- MHO[[station]]$X
+  #initial_model <- glm(Y ~ 1, family = binomial(logit), data = data)
+  initial_model <- MHO[[station]]$M5
+  
+  vars <- vars <- paste0(station, '.p.lag:', c('c.1.h', 's.1.h', 's.1.l', 'c.1.l'))
+  
+  #ALGORTIHM DID NOT CONVERGE?
+  for (i in 1:length(vars)){
+    mod.aux <- update(initial_model, data = X, formula = as.formula(paste(". ~ . +", vars[i])),
+                      control = glm.control(maxit = 50))
+    
+    aux <- anova(initial_model, mod.aux)
+    pval <- aux$`Pr(>Chi)`[2]
+    
+    if (pval < 0.05 & !is.na(pval)){
+      initial_model <- mod.aux
+      cat('Variable añadida: ', vars[i], '\n')
+    }
+  }
+  
+  M8_list[[station]] <- initial_model
+}
+
+for (station in estaciones){
+  MHO[[station]][['M8']] <- M8_list[[station]]
+  MHO[[station]][['vars.M8']] <- M8_list[[station]]$coefficients
+}
+rm('M8_list')
+saveRDS(MHO, 'MHO.rds')
 
 #----evaluation #put in a Rmarkdow----
 library(pROC)
@@ -398,23 +437,23 @@ for (station in estaciones){
 
 
 #plot all AUC and Roc curves: Comparison of models
-auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
-colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
+auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
+colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
 rownames(auc.df) <- estaciones
 auc.df$station <- estaciones
 
-auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
-colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
+auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
+colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
 rownames(auc.df.pc) <- estaciones
 auc.df.pc$station <- estaciones
 
-AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
-colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
 
-BIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
-colnames(BIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
+BIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
+colnames(BIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
 rownames(BIC.df) <- estaciones
 BIC.df$station <- estaciones
 
@@ -425,6 +464,8 @@ for (station in estaciones){
   M4 <- MHO[[station]]$M4
   M5 <- MHO[[station]]$M5
   M6 <- MHO[[station]]$M6
+  M7 <- MHO[[station]]$M7
+  M8 <- MHO[[station]]$M8
   X <- MHO[[station]]$X
   
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = "%Y-%m-%d")
@@ -439,6 +480,8 @@ for (station in estaciones){
   roc_M4 <- roc(X$Y, predict(M4, type = 'response'))
   roc_M5 <- roc(X$Y, predict(M5, type = 'response'))
   roc_M6 <- roc(X$Y, predict(M6, type = 'response'))
+  roc_M7 <- roc(X$Y, predict(M7, type = 'response'))
+  roc_M8 <- roc(X$Y, predict(M8, type = 'response'))
   
   roc_M1.pc <- roc(X$Y[ind], M1$fitted.values[ind])
   roc_M2.pc <- roc(X$Y[ind], M2$fitted.values[ind])
@@ -446,6 +489,8 @@ for (station in estaciones){
   roc_M4.pc <- roc(X$Y[ind], M4$fitted.values[ind])
   roc_M5.pc <- roc(X$Y[ind], M5$fitted.values[ind])
   roc_M6.pc <- roc(X$Y[ind], M6$fitted.values[ind])
+  roc_M7.pc <- roc(X$Y[ind], M7$fitted.values[ind])
+  roc_M8.pc <- roc(X$Y[ind], M8$fitted.values[ind])
   
   # plot(roc_M1,
   #      col = 'red',
@@ -477,14 +522,18 @@ for (station in estaciones){
   #        legend = c('M1', 'M2', 'M3', 'M4', 'M5'),
   #        col = c('red', 'blue', 'green', 'purple', 'orange'))
   
-  auc.df[station, 2:7] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
-                               auc(roc_M4), auc(roc_M5), auc(roc_M6)), 3)
-  auc.df.pc[station, 2:7] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
-                                  auc(roc_M4.pc), auc(roc_M5.pc), auc(roc_M6.pc)), 3)
-  AIC.df[station, 2:7] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
-                               AIC(M4), AIC(M5), AIC(M6)), 2)
-  BIC.df[station, 2:7] <- round(c(BIC(M1), BIC(M2), BIC(M3), 
-                               BIC(M4), BIC(M5), BIC(M6)), 2)
+  auc.df[station, 2:9] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
+                               auc(roc_M4), auc(roc_M5), auc(roc_M6),
+                               auc(roc_M7), auc(roc_M8)), 3)
+  auc.df.pc[station, 2:9] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
+                                  auc(roc_M4.pc), auc(roc_M5.pc), auc(roc_M6.pc),
+                                  auc(roc_M7.pc), auc(roc_M8.pc)), 3)
+  AIC.df[station, 2:9] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+                               AIC(M4), AIC(M5), AIC(M6),
+                               AIC(M7), AIC(M8)), 2)
+  BIC.df[station, 2:9] <- round(c(BIC(M1), BIC(M2), BIC(M3), 
+                               BIC(M4), BIC(M5), BIC(M6),
+                               BIC(M7), BIC(M8)), 2)
 }
 # library(writexl)
 # write_xlsx(AIC.df, "borrar.xlsx")
@@ -578,7 +627,7 @@ mapa_calor <- function(df, tipo = c("AUC", "AIC")) {
       geom_text(aes(label = round(value, 3)), size = 5) +
       scale_fill_gradientn(
         colors = c("#277DF5", "white", "red"),
-        name = "BIC relativo\npor fila",
+        name = "AIC relativo\npor fila",
         breaks = c(0, 0.5, 1),
         labels = c("min", "", "max")
       ) +

@@ -315,10 +315,6 @@ for (station in estaciones){
   
 }
 
-
-
-
-
 for (station in estaciones){
   MHQ[[station]][['M6']] <- M6_list[[station]]
   MHQ[[station]][['vars.M6']] <- M6_list[[station]]$mu.coefficients
@@ -328,9 +324,39 @@ rm('M6_list')
 saveRDS(MHQ, 'MHQ.rds')
 MHQ <- readRDS('MHQ.rds')
 
+
+M7_list <- list()
+for (station in estaciones){
+  cat('Estación ', station, '\n')
+  M6 <- MHQ[[station]]$M6
+  vars <- c(labels(terms(M6$mu.formula)), 
+            paste0(station, '.p.lag:', c('s.1.h', 'c.1.h', 'c.1.l', 's.1.l')))
+  vars <- setdiff(vars, c(unlist(harmonics.l), unlist(harmonics.h)))
+  
+  mod_null <- gamlss(as.formula(paste(paste0(station, '.p'), '~ 1')), 
+                     sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
+                       I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
+                     family = GA, 
+                     data = MHQ[[station]]$X,
+                     trace = F)
+  
+  M7_list[[station]] <- step_glm(mod_null, 
+                                 data = MHQ[[station]]$X, 
+                                 vars = vars, 
+                                 harmonics.l = harmonics.l,
+                                 harmonics.h = harmonics.h)
+}
+
+for (station in estaciones){
+  MHQ[[station]][['M7']] <- M7_list[[station]]
+  MHQ[[station]][['vars.M7']] <- M7_list[[station]]$mu.coefficients
+}
+rm('M7_list')
+saveRDS(MHQ, 'MHQ.rds')
+
 #----model comparison----
-AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 7))
-colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6')
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 8))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M7')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
 for (station in estaciones){
@@ -340,9 +366,11 @@ for (station in estaciones){
   M4 <- MHQ[[station]]$M4
   M5 <- MHQ[[station]]$M5
   M6 <- MHQ[[station]]$M6
+  M7 <- MHQ[[station]]$M7
   X <- MHQ[[station]]$X
-  AIC.df[station, 2:7] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
-                                  AIC(M4), AIC(M5), AIC(M6)), 2)
+  AIC.df[station, 2:8] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+                                  AIC(M4), AIC(M5), AIC(M6),
+                                  AIC(M7)), 2)
   
 }
 
@@ -403,13 +431,18 @@ X[ind, ]
 par(mfrow = c(7, 4))
 for (station in estaciones){
  station.p <- paste0(station, '.p')
-  shape <- 1 / MHQ[[station]]$M6$sigma.fv^2
-  rate <- shape / MHQ[[station]]$M6$mu.fv
+  shape1 <- 1 / MHQ[[station]]$M7$sigma.fv^2
+  rate1 <- shape1 / MHQ[[station]]$M7$mu.fv
+  
+  shape2 <- 1 / MHQ[[station]]$M6$sigma.fv^2
+  rate2 <- shape2 / MHQ[[station]]$M6$mu.fv
   
   hist(MHQ[[station]]$X[, station.p], breaks = 50, prob = T, main = station)
   lines(density(MHQ[[station]]$X[, station.p]), col = 'blue')
-  y_sim <- rgamma(length(shape), shape = shape, rate = rate)
-  lines(density(y_sim), col = 'red', lwd = 2)
+  y_sim1 <- rgamma(length(shape1), shape = shape1, rate = rate1)
+  lines(density(y_sim1), col = 'red', lwd = 2)
+  y_sim2 <- rgamma(length(shape2), shape = shape2, rate = rate2)
+  lines(density(y_sim2), col = 'springgreen2', lwd = 2)
  }
 
 station <- estaciones[4]
