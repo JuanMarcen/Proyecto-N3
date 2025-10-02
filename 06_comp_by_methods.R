@@ -16,7 +16,6 @@ ref.period <- as.Date(c('12/05/2011', '30/11/2023'), format = '%d/%m/%Y')
 
 
 # Anual mean precipitation in JJA
-n <- year(ref.period[2]) - year(ref.period[1]) + 1
 value.obs.sim.station <- function(station, ref.period, data, model, 
                                  type, quantile = NULL,
                                  n.sim = 100, months = NULL){
@@ -144,7 +143,6 @@ value.obs.sim.station <- function(station, ref.period, data, model,
   return(c(x.obs.final, vector.sim))
 }
 
-a <- value.obs.sim.station(station, ref.period, MDQ, 'M6', type = 'freq', n.sim = 10)
 
 value.obs.sim.full <- function(estaciones, ref.period, data, model, 
                                type, quantile = NULL,
@@ -157,7 +155,7 @@ value.obs.sim.full <- function(estaciones, ref.period, data, model,
   names.fill <- c('x.obs', paste0('y.sim.', 1:n.sim))
   
   for (i in 1:length(estaciones)){
-    cat('Cálculo para la estación: ', estaciones[i], '\n')
+    #cat('Cálculo para la estación: ', estaciones[i], '\n')
     value.station <- value.obs.sim.station(estaciones[i],
                                          ref.period = ref.period,
                                          data = data,
@@ -191,8 +189,8 @@ mean.metric <- function(metric, data){
 }
 
 #MHQ
-df.amounts.M5 <- value.obs.sim.full(estaciones[-4], ref.period, MHQ, 'M4', n.sim = 100)
-df.amounts.M6 <- value.obs.sim.full(estaciones[-4], ref.period, MHQ, 'M6', n.sim = 100)
+df.amounts.M5 <- value.obs.sim.full(estaciones[-4], ref.period, MHQ, 'M4', n.sim = 100, type = 'mean')
+df.amounts.M6 <- value.obs.sim.full(estaciones[-4], ref.period, MHQ, 'M6', n.sim = 100, type = 'mean')
 
 mean.metric('SCC', df.amounts.M6)  
 mean.metric('SCC', df.amounts.M5)
@@ -202,13 +200,78 @@ mean.metric('RB', df.amounts.M6)
 mean.metric('RB', df.amounts.M5)
 
 #MDQ
-df.amounts.M5 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M5', n.sim = 100, type = 'freq')
-df.amounts.M6 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M6', n.sim = 100, type = 'freq')
+day.amounts.M5 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M5', n.sim = 100, type = 'mean')
+day.amounts.M6 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M6', n.sim = 100, type = 'mean')
 
-mean.metric('SCC', df.amounts.M6)  
-mean.metric('SCC', df.amounts.M5)
-mean.metric('RMSE', df.amounts.M6)
-mean.metric('RMSE', df.amounts.M5)
-mean.metric('RB', df.amounts.M6)
-mean.metric('RB', df.amounts.M5)
+day.q0.90.M5 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M5', n.sim = 100, type = 'quantile', quantile = 0.90)
+day.q0.90.M6 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M6', n.sim = 100, type = 'quantile', quantile = 0.90)
 
+day.q0.95.M5 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M5', n.sim = 100, type = 'quantile', quantile = 0.95)
+day.q0.95.M6 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M6', n.sim = 100, type = 'quantile', quantile = 0.95)
+
+day.q0.99.M5 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M5', n.sim = 100, type = 'quantile', quantile = 0.99)
+day.q0.99.M6 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M6', n.sim = 100, type = 'quantile', quantile = 0.99)
+
+day.freq.M5 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M5', n.sim = 100, type = 'freq')
+day.freq.M6 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M6', n.sim = 100, type = 'freq')
+
+day.int.M5 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M5', n.sim = 100, type = 'intensity')
+day.int.M6 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M6', n.sim = 100, type = 'intensity')
+
+mean.metric('SCC', day.amounts.M6)  
+mean.metric('SCC', day.amounts.M5)
+mean.metric('RMSE', day.amounts.M6)
+mean.metric('RMSE', day.amounts.M5)
+mean.metric('RB', day.amounts.M6)
+mean.metric('RB', day.amounts.M5)
+
+model.comp.df <- function(estaciones, ref.period, data, m1, m2, n.sim = 100){
+  amounts.m1 <- value.obs.sim.full(estaciones, ref.period, data, m1, n.sim = n.sim, type = 'mean')
+  amounts.m2 <- value.obs.sim.full(estaciones, ref.period, data, m2, n.sim = n.sim, type = 'mean')
+  
+  q0.90.m1 <- value.obs.sim.full(estaciones, ref.period, data, m1, n.sim = n.sim, type = 'quantile', quantile = 0.90)
+  q0.90.m2 <- value.obs.sim.full(estaciones, ref.period, data, m2, n.sim = n.sim, type = 'quantile', quantile = 0.90)
+  
+  q0.95.m1 <- value.obs.sim.full(estaciones, ref.period, data, m1, n.sim = n.sim, type = 'quantile', quantile = 0.95)
+  q0.95.m2 <- value.obs.sim.full(estaciones, ref.period, data, m2, n.sim = n.sim, type = 'quantile', quantile = 0.95)
+  
+  q0.99.m1 <- value.obs.sim.full(estaciones, ref.period, data, m1, n.sim = n.sim, type = 'quantile', quantile = 0.99)
+  q0.99.m2 <- value.obs.sim.full(estaciones, ref.period, data, m2, n.sim = n.sim, type = 'quantile', quantile = 0.99)
+  
+  freq.m1 <- value.obs.sim.full(estaciones, ref.period, data, m1, n.sim = n.sim, type = 'freq')
+  freq.m2 <- value.obs.sim.full(estaciones, ref.period, data, m2, n.sim = n.sim, type = 'freq')
+  
+  int.m1 <- value.obs.sim.full(estaciones, ref.period, data, m1, n.sim = n.sim, type = 'intensity')
+  int.m2 <- value.obs.sim.full(estaciones, ref.period, data, m2, n.sim = n.sim, type = 'intensity')
+  
+  df <- data.frame(
+    type = c('Amount', 'Frequency', 'Intensity', 'q0.90', 'q0.95', 'q0.99')
+  )
+  
+  metrics <- c('SCC', 'RMSE', 'RB')
+  for (i in metrics){
+    df[[paste0(i, '.', m1)]] <- c(mean.metric(i, amounts.m1),
+                                  mean.metric(i, freq.m1),
+                                  mean.metric(i, int.m1),
+                                  mean.metric(i, q0.90.m1),
+                                  mean.metric(i, q0.95.m1),
+                                  mean.metric(i, q0.99.m1))
+    df[[paste0(i, '.', m2)]] <- c(mean.metric(i, amounts.m2),
+                                  mean.metric(i, freq.m2),
+                                  mean.metric(i, int.m2),
+                                  mean.metric(i, q0.90.m2),
+                                  mean.metric(i, q0.95.m2),
+                                  mean.metric(i, q0.99.m2))
+  }
+  
+  
+  df <- df[, c(1, 2, 4, 6, 3, 5, 7)]
+  return(df)
+}
+
+df.day.M5.M6 <- model.comp.df(estaciones, ref.period, MDQ, 'M5', 'M6', n.sim = 100)
+df.hour.M5.M6 <- model.comp.df(estaciones[-4], ref.period, MHQ, 'M5', 'M6', n.sim = 100)
+
+library(writexl)
+write_xlsx(df.day.M5.M6, "df.day.M5.M6.xlsx")
+write_xlsx(df.hour.M5.M6, "df.hour.M5.M6.xlsx")
