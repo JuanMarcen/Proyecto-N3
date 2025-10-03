@@ -57,7 +57,7 @@ sanitize_formula <- function(f) {
 #as function it doesnt work, so we do a foor loop deleting data
 aux.mo <- 'M5'
 aux.mq <- 'M6'
-n.sim <- 100
+n.sim <- 1
 set.seed(05052002)
 for (station in estaciones[1]){
   mo <- MDO[[station]][[aux.mo]]
