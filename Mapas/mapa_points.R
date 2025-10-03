@@ -47,6 +47,7 @@ stations <- st_transform(
   2062
 )
 
+# GEOPOTENTIAL POINTS
 cpoints <- data.frame(
   LON = c(-1, -1, -1, -1, 0, 0, 0, 0, -2, -2, -2, -2, -3, -3, -3, -3),
   LAT = rep(40:43, times = 4)
@@ -68,8 +69,35 @@ cpoints <- st_transform(
   2062
 )
 
+
+#AEMET
+AEMET <- read_excel("C:/Users/jumar/OneDrive/Escritorio/N3/datos AEMET/estaciones-precipitación-horaria.xlsx")
+AEMET <- AEMET %>%
+  filter(
+    NOM_PROV %in% c('SORIA', 'ZARAGOZA', 'TERUEL', 'NAVARRA') &
+      AÑO_ÚLTIMO_DATO_PRECIPITACIÓN_HORARIA >= 2023 &
+      COORDENADA_X >= min(stations$X) &
+      COORDENADA_X <= max(stations$X) &
+      COORDENADA_Y >= min(stations$Y) &
+      COORDENADA_Y <= max(stations$Y) &
+      FUNCIONA == 'Sí'& 
+      NÚMERO_MESES_PRECIPITACIÓN_HORARIA >= 0.9 * (AÑO_ÚLTIMO_DATO_PRECIPITACIÓN_HORARIA - AÑO_PRIMER_DATO_PRECIPITACIÓN_HORARIA + 1) * 12
+  )
+
+AEMET_sf <- st_transform(
+  as(
+    SpatialPointsDataFrame(
+      coords = AEMET[c("COORDENADA_X", "COORDENADA_Y")], 
+      data = AEMET,
+      proj4string = CRS("EPSG:32630") # UTM original
+    ),
+    'sf'
+  ),
+  2062  # Destino
+)
+
 # cleaning of workspace
-rm(list = setdiff(ls(), c("background", "limits", "stations", "cpoints")))
+rm(list = setdiff(ls(), c("background", "limits", "stations", "cpoints", "AEMET_sf")))
 
 # Physical map of desired zone
 hypsobath <- esp_get_hypsobath()
@@ -119,17 +147,34 @@ map_zone <- ggplot(hypsobath) +
                     breaks = levels(hypsobath$val_inf),
                     guide = guide_legend(reverse = TRUE)) +
   xlab("Longitud") + ylab("Latitud") +
-  geom_point(aes(x = X, y = Y, color = stations$color), data = data.frame(st_coordinates(stations))) +
+  geom_point(aes(x = X, y = Y, color = stations$color), 
+             data = data.frame(st_coordinates(stations)),
+             size = 3) +
+  # ESQUINAS GEOPOTENCIAL
   geom_point(aes(x = X, y = Y),
              data = data.frame(st_coordinates(cpoints)),
              col = 'black',
              size = 3,
              shape = 15) +
+  # AEMET
+  geom_point(aes(x = X, y = Y),
+             data = data.frame(st_coordinates(AEMET_sf)),
+             col = 'purple',
+             size = 3,
+             shape = 17) +
+  #labels stations
   ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations$STAID, color = stations$color),
-                            size = 3.5,
+                            size = 2.5, #original size = 3.5
                             position = 'identity', label.size = 0.025,
                             max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
                             data = data.frame(st_coordinates(stations)),
+                            seed = 23) +
+  #labels aemet
+  ggrepel::geom_label_repel(aes(x = X, y = Y, label = AEMET_sf$INDICATIVO, color = 'purple'),
+                            size = 2.5, #original size = 3.5
+                            position = 'identity', label.size = 0.025,
+                            max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                            data = data.frame(st_coordinates(AEMET_sf)),
                             seed = 23) +
   scale_color_identity() + 
   ggtitle(label = 'Ateca y alrededores') 
