@@ -255,7 +255,7 @@ graph <- graph %>%
     )
   )
 
-#8
+#10
 graph <- graph %>%
   add_node(
     label = 'CANTIDAD \n DIARIA',
