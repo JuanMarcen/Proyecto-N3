@@ -57,7 +57,7 @@ sanitize_formula <- function(f) {
 #as function it doesnt work, so we do a foor loop deleting data
 aux.mo <- 'M5'
 aux.mq <- 'M6'
-n.sim <- 1
+n.sim <- 100
 set.seed(05052002)
 for (station in estaciones[1]){
   mo <- MDO[[station]][[aux.mo]]
@@ -70,8 +70,11 @@ for (station in estaciones[1]){
   Xq <- MDQ[[station]]$X        
   
   # Crear copias locales de las fórmulas
-  mu.form <- sanitize_formula(mq$mu.formula)
-  sigma.form <- sanitize_formula(mq$sigma.formula)
+  # mu.form <- sanitize_formula(mq$mu.formula)
+  # sigma.form <- sanitize_formula(mq$sigma.formula)
+  
+  mu.form <- mq$mu.formula
+  sigma.form <- mq$sigma.formula
   
   print(mu.form)
   print(sigma.form)
@@ -141,8 +144,121 @@ for (station in estaciones[1]){
                 'rain_matrix', 'n_days', 'sigma.new',
                 'mu.new', 'X_data', 'Xo', 'Xq', 'mq2',
                 'mu.form', 'sigma.form', 'mo', 'mq'))
-  }else{
-    #simular día a día
+  }
+  # else{
+  #   #simular día a día
+  #   X_data <- global_df %>%
+  #     filter(STAID == station) %>%
+  #     select(date) %>%
+  #     inner_join(Xo, by = 'date') %>%
+  #     as.data.frame()
+  #   X_data <- X_data[, names(Xq)] # predict in gamlss, requires the same order in the columns
+  #   
+  #   #nueva mu y sigma necesarios para la primera fecha
+  #   cat('Dia 1\n')
+  #   cat('mu..')
+  #   mu.new <- suppressWarnings(
+  #     predict(mq2, newdata = X_data[1, ], what = 'mu', type = 'response')
+  #   )
+  #   cat('sigma..\n')
+  #   sigma.new <- suppressWarnings(
+  #     predict(mq2, newdata = X_data[1, ], what = 'sigma', type = 'response')
+  #   )
+  #   
+  #   df.gen <- Xo %>% select(date)
+  #   
+  #   df.gen <- df.gen %>%
+  #     mutate(
+  #       prob.p = NA, #change this for predict of a new df?
+  #       mu.fv = NA,
+  #       sigma.fv = NA,
+  #       shape.fv = NA,
+  #       rate.fv = NA, #shape/mu
+  #       p.day.obs = X_data[[paste0(station, '.p')]]
+  #     )
+  #   
+  #   #va a ser na en el resto porque tengo 100 valores disitntos para cada 
+  #   df.gen[1, c(2:(ncol(df.gen) - 1))] <- c(
+  #     prob.p = mo$fitted.values[1], #change this for predict of a new df?
+  #     mu.fv = mu.new,
+  #     sigma.fv = sigma.new,
+  #     shape.fv = 1 / sigma.new^2,
+  #     rate.fv = 1 / sigma.new^2 / mu.new
+  #   )
+  #   
+  #   #simulación dia 1
+  #   rain_matrix <- matrix(runif(1 * n.sim), nrow = 1, ncol = n.sim) <= df.gen$prob.p[1]
+  #   
+  #   # Matriz de gamma (simulaciones de lluvia)
+  #   gamma_matrix <- matrix(rgamma(1 * n.sim, shape = rep(df.gen$shape.fv[1], n.sim),
+  #                                 rate = rep(df.gen$rate.fv[1], n.sim)), 
+  #                          nrow = 1, ncol = n.sim)
+  #   
+  #   # Asignamos 0 donde no llueve
+  #   gamma_matrix[!rain_matrix] <- 0
+  #   
+  #   # Convertimos la matriz a columnas en df.gen
+  #   sim_df <- as.data.frame(gamma_matrix)
+  #   names(sim_df) <- paste0("p.day.sim.", 1:n.sim)
+  #   
+  #   sim_df <- sim_df[rep(1, nrow(df.gen)), , drop = F]  # repite la fila
+  #   sim_df[-1, ] <- NA                    # ponemos NA en todas menos la primera
+  #   
+  #   # Unir columnas
+  #   df.gen <- cbind(df.gen, sim_df)
+  #   
+  #   for (i in 2:nrow(df.gen)){
+  #     cat('Dia ', i, ' \n')
+  #     # prueba para el día 2 (generalizado)
+  #     # crear un nuevo data frame de 100 (simulaciones) x columnas X_data
+  #     aux <- X_data[i, , drop = FALSE]
+  #     aux <-aux[rep(1, n.sim), , drop = FALSE]
+  #     aux[[paste0(station, '.p.lag')]] <- as.numeric(df.gen[i - 1, paste0("p.day.sim.", 1:n.sim)])
+  #     
+  #     aux <- aux[, names(Xq)]
+  #     aux2 <- aux
+  #     #mirar tema NA's
+  #     #obtención de mu y sigma para cada uno de estos
+  #     cat('mu..')
+  #     aux2$mu.new <- suppressWarnings(
+  #       predict(mq2, newdata = aux, what = 'mu', type = 'response')
+  #     )
+  #     cat('sigma..')
+  #     aux2$sigma.new <- suppressWarnings(
+  #       predict(mq2, newdata = aux, what = 'sigma', type = 'response')
+  #     )
+  #     
+  #     #obtencion de probabilidad de lluvia
+  #     cat('prob..\n')
+  #     aux2$prob.dia <- predict(mo, newdata = aux, type = 'response')
+  #     
+  #     aux2 <- aux2 %>% 
+  #       select(prob.dia, mu.new, sigma.new) %>%
+  #       rowwise() %>%
+  #       mutate(
+  #         shape.fv = 1 / sigma.new^2,
+  #         rate.fv = 1 /sigma.new^2 / mu.new
+  #       ) %>%
+  #       ungroup() %>%
+  #       rowwise() %>%
+  #       mutate(
+  #         sim = ifelse(runif(1) <= prob.dia, rgamma(1, shape = shape.fv, rate = rate.fv), 0)
+  #       ) %>% 
+  #       ungroup()
+  #     
+  #     df.gen[i, paste0("p.day.sim.", 1:n.sim)] <- as.numeric(aux2$sim)
+  #   }
+  #   
+  #   assign(paste0('df.gen.day.', station), df.gen)
+  #   
+  #   rm(list = c('df.gen', 'sim_df', 'gamma_matrix',
+  #               'rain_matrix', 'n_days', 'sigma.new',
+  #               'mu.new', 'X_data', 'Xo', 'Xq', 'mq2',
+  #               'mu.form', 'sigma.form', 'mo', 'mq'))
+  # 
+  # }
+  else {
+    # --- Simular día a día (versión que descarta simulaciones inválidas) ---
     X_data <- global_df %>%
       filter(STAID == station) %>%
       select(date) %>%
@@ -150,71 +266,101 @@ for (station in estaciones[1]){
       as.data.frame()
     X_data <- X_data[, names(Xq)] # predict in gamlss, requires the same order in the columns
     
-    #nueva mu y sigma necesarios para la primera fecha
+    # nuevos mu y sigma necesarios para la primera fecha
     cat('Dia 1\n')
     cat('mu..')
     mu.new <- suppressWarnings(
-      predict(mq2, newdata = X_data[1, ], what = 'mu', type = 'response')
+      predict(mq2, newdata = X_data[1, , drop = FALSE], what = 'mu', type = 'response')
     )
     cat('sigma..\n')
     sigma.new <- suppressWarnings(
-      predict(mq2, newdata = X_data[1, ], what = 'sigma', type = 'response')
+      predict(mq2, newdata = X_data[1, , drop = FALSE], what = 'sigma', type = 'response')
     )
     
     df.gen <- Xo %>% select(date)
     
     df.gen <- df.gen %>%
       mutate(
-        prob.p = NA, #change this for predict of a new df?
+        prob.p = NA,
         mu.fv = NA,
         sigma.fv = NA,
         shape.fv = NA,
-        rate.fv = NA, #shape/mu
+        rate.fv = NA,
         p.day.obs = X_data[[paste0(station, '.p')]]
       )
     
-    #va a ser na en el resto porque tengo 100 valores disitntos para cada 
+    # parámetros para el día 1 (estos son vectores escalares porque representan "la estructura")
     df.gen[1, c(2:(ncol(df.gen) - 1))] <- c(
-      prob.p = mo$fitted.values[1], #change this for predict of a new df?
+      prob.p = mo$fitted.values[1],
       mu.fv = mu.new,
       sigma.fv = sigma.new,
       shape.fv = 1 / sigma.new^2,
       rate.fv = 1 / sigma.new^2 / mu.new
     )
     
-    #simulación dia 1
-    rain_matrix <- matrix(runif(1 * n.sim), nrow = 1, ncol = n.sim) <= df.gen$prob.p[1]
+    # Inicializar matriz de simulaciones: filas = días, columnas = simulaciones
+    n_days <- nrow(df.gen)
+    sim_matrix <- matrix(NA_real_, nrow = n_days, ncol = n.sim)
+    colnames(sim_matrix) <- paste0("p.day.sim.", 1:n.sim)
     
-    # Matriz de gamma (simulaciones de lluvia)
-    gamma_matrix <- matrix(rgamma(1 * n.sim, shape = rep(df.gen$shape.fv[1], n.sim),
-                                  rate = rep(df.gen$rate.fv[1], n.sim)), 
-                           nrow = 1, ncol = n.sim)
+    # Simulación día 1 (para todas las n.sim)
+    rain_vec <- runif(n.sim) <= df.gen$prob.p[1]
+    gamma_vec <- rgamma(n.sim, shape = rep(1 / df.gen$sigma.fv[1]^2, n.sim),
+                        rate = rep(1 / df.gen$sigma.fv[1]^2 / df.gen$mu.fv[1], n.sim))
+    gamma_vec[!rain_vec] <- 0
+    sim_matrix[1, ] <- gamma_vec
     
-    # Asignamos 0 donde no llueve
-    gamma_matrix[!rain_matrix] <- 0
+    # Índices de simulaciones activas (las que aún no han sido descartadas)
+    active_sims <- seq_len(n.sim)
     
-    # Convertimos la matriz a columnas en df.gen
-    sim_df <- as.data.frame(gamma_matrix)
-    names(sim_df) <- paste0("p.day.sim.", 1:n.sim)
+    # Umbral para considerar un valor "absurdo" — aquí uso el percentil 0.999 histórico
+    umbral <- quantile(X_data[[paste0(station, '.p')]], probs = 0.999, na.rm = TRUE)
+    # Si prefieres un valor fijo, reemplaza la línea anterior, p.ej. umbral <- 2000
     
-    sim_df <- sim_df[rep(1, nrow(df.gen)), , drop = F]  # repite la fila
-    sim_df[-1, ] <- NA                    # ponemos NA en todas menos la primera
-    
-    # Unir columnas
-    df.gen <- cbind(df.gen, sim_df)
-    
-    for (i in 2:nrow(df.gen)){
+    # Loop día a día
+    for (i in 2:nrow(df.gen)) {
       cat('Dia ', i, ' \n')
-      # prueba para el día 2 (generalizado)
-      # crear un nuevo data frame de 100 (simulaciones) x columnas X_data
+      
+      if (length(active_sims) == 0) {
+        cat("No quedan simulaciones activas en el día ", i, ". Terminando.\n")
+        break
+      }
+      
+      # Preparamos aux con una fila repetida por cada simulación activa
       aux <- X_data[i, , drop = FALSE]
-      aux <-aux[rep(1, n.sim), , drop = FALSE]
-      aux[[paste0(station, '.p.lag')]] <- as.numeric(df.gen[i - 1, paste0("p.day.sim.", 1:n.sim)])
+      aux <- aux[rep(1, length(active_sims)), , drop = FALSE]
+      
+      # Lag = valor simulado el día anterior para cada simulación activa
+      lag_values <- sim_matrix[i - 1, active_sims]
+      
+      # Detectar cuáles son inválidos ahora (NA, Inf, o > umbral)
+      bad_idx_rel <- which(!is.finite(lag_values) | is.na(lag_values) | (lag_values > 500))
+      if (length(bad_idx_rel) > 0) {
+        # Mapear a índices absolutos en el conjunto original de simulaciones
+        bad_idx_abs <- active_sims[bad_idx_rel]
+        cat("  ⚠️ Detectadas simulaciones inválidas en día ", i - 1, ": ",
+            paste0(bad_idx_abs, collapse = ", "), " -> descartando\n")
+        # Dejamos NA explícito (ya lo es) en la fila pasada; pero por claridad:
+        sim_matrix[i - 1, bad_idx_abs] <- NA_real_
+        # Eliminamos esas simulaciones de active_sims para que no se usen como lag en adelante
+        active_sims <- setdiff(active_sims, bad_idx_abs)
+      }
+      
+      # Si tras eliminar no queda ninguna simulación válida, salimos
+      if (length(active_sims) == 0) {
+        cat("No quedan simulaciones activas tras depuración en día ", i, ". Terminando.\n")
+        break
+      }
+      
+      # Reconstruir aux con la nueva longitud de simulaciones activas
+      aux <- X_data[i, , drop = FALSE]
+      aux <- aux[rep(1, length(active_sims)), , drop = FALSE]
+      aux[[paste0(station, '.p.lag')]] <- as.numeric(sim_matrix[i - 1, active_sims])
       
       aux <- aux[, names(Xq)]
       aux2 <- aux
-      #mirar tema NA's
-      #obtención de mu y sigma para cada uno de estos
+      
+      # obtención de mu y sigma solo para simulaciones activas
       cat('mu..')
       aux2$mu.new <- suppressWarnings(
         predict(mq2, newdata = aux, what = 'mu', type = 'response')
@@ -224,30 +370,47 @@ for (station in estaciones[1]){
         predict(mq2, newdata = aux, what = 'sigma', type = 'response')
       )
       
-      #obtencion de probabilidad de lluvia
+      # obtención de probabilidad de lluvia solo para simulaciones activas
       cat('prob..\n')
       aux2$prob.dia <- predict(mo, newdata = aux, type = 'response')
       
-      aux2 <- aux2 %>% 
+      # Simular solo para las filas activas
+      aux2 <- aux2 %>%
         select(prob.dia, mu.new, sigma.new) %>%
         rowwise() %>%
         mutate(
           shape.fv = 1 / sigma.new^2,
-          rate.fv = 1 /sigma.new^2 / mu.new
+          rate.fv = 1 / sigma.new^2 / mu.new
         ) %>%
         ungroup() %>%
         rowwise() %>%
         mutate(
           sim = ifelse(runif(1) <= prob.dia, rgamma(1, shape = shape.fv, rate = rate.fv), 0)
-        ) %>% 
+        ) %>%
         ungroup()
       
-      df.gen[i, paste0("p.day.sim.", 1:n.sim)] <- as.numeric(aux2$sim)
-    }
+      # Guardar las simulaciones activas en la matriz en la posición correspondiente
+      sim_matrix[i, active_sims] <- as.numeric(aux2$sim)
+      
+      # Nota: las columnas correspondientes a simulaciones descartadas permanecen en NA
+    } # end for days
     
-
+    # Convertir sim_matrix en data.frame con nombres adecuados y añadir a df.gen
+    sim_df <- as.data.frame(sim_matrix)
+    names(sim_df) <- paste0("p.day.sim.", 1:n.sim)
+    df.gen <- cbind(df.gen, sim_df)
+    
+    assign(paste0('df.gen.day.', station), df.gen)
+    
+    rm(list = c('df.gen', 'sim_df', 'sim_matrix', 
+                'rain_vec', 'gamma_vec', 'n_days', 'sigma.new',
+                'mu.new', 'X_data', 'Xo', 'Xq', 'mq2',
+                'mu.form', 'sigma.form', 'mo', 'mq'))
+    
+    cat(length(active_sims), ' han sobrevivido a la simulación')
   }
-
+  
+  
   
 }
 
@@ -343,8 +506,9 @@ daily.generator <- function(station,
 
 basura <- get(paste0('df.gen.day.',station))
 plot(density(basura[['p.day.obs']]), col = 'blue', lwd = 2,
-     xlim = c(0, max(basura[,paste0('p.day.sim.', 1:n.sim)])))
-for(i in 1:n.sim){
+     xlim = c(0, max(basura[,paste0('p.day.sim.', active_sims)]))
+     )
+for(i in active_sims){
   lines(
     density(basura[[paste0('p.day.sim.', i)]]), 
     col = 'red', lwd = 2
@@ -352,7 +516,7 @@ for(i in 1:n.sim){
 }
 lines(density(basura[['p.day.obs']]), col = 'blue', lwd = 2)
 
-max <- apply(basura[, c('p.day.obs', paste0('p.day.sim.', 1:n.sim))], 2, max)
+max <- apply(basura[, c('p.day.obs', paste0('p.day.sim.', active_sims))], 2, max)
 boxplot(max)
 points(max[1], pch = 19, col = 'red')
 abline(h = quantile(max, probs = 0.90), lty = 2, col = 'blue')
@@ -453,8 +617,10 @@ hourly.generator <- function(station,
 aux.mo <- 'M5'
 aux.mq <- 'M6'
 n.sim <- 100
+set.seed(05052002)
+# hacer lo mismo de arriba pero para horas
 for (station in estaciones[1]){
-  cat('1..')
+  
   mo <- MHO[[station]][[aux.mo]]
   mq <- MHQ[[station]][[aux.mq]]
   
@@ -466,9 +632,9 @@ for (station in estaciones[1]){
                              min = 0,
                              sec = 0,
                              tz = "UTC")
-  cat('2..')
+  
   Xq <- MHQ[[station]]$X
-  cat('3..')
+  
   Xq$datetime <- ISOdatetime(year = Xq$t,
                              month = Xq$mes,
                              day = Xq$dia.mes,
@@ -478,8 +644,8 @@ for (station in estaciones[1]){
                              tz = "UTC")
   
   # in order to predict correctly (USE THIS ONE TO PREDICT)
-  mu.form <- sanitize_formula(mq$mu.formula)
-  sigma.form <- sanitize_formula(mq$sigma.formula)
+  mu.form <- mq$mu.formula
+  sigma.form <- mq$sigma.formula
   
   print(mu.form)
   print(sigma.form)
@@ -488,63 +654,208 @@ for (station in estaciones[1]){
                 sigma.fo = sigma.form, 
                 family = GA, 
                 data = Xq, trace = F)
-  cat('4..')
   
-  #sum(abs(mq$mu.fv - mq2$mu.fv) < 1e-6)
-  
-  # X_data: smae columns as Xq
-  
-  X_data <- Xo[, names(Xq)]
-  cat('5..')
-  
-  #new values of mu and sigma 
-  mu.new <- suppressWarnings(
-    predict(mq2, newdata = X_data, what = 'mu', type = 'response')
-  )
-  
-  cat('6..')
-  sigma.new <- suppressWarnings(
-    predict(mq2, newdata = X_data, what = 'sigma', type = 'response')
-  )
-  
-  df.gen <- Xo %>%
-    select(datetime)
-  
-  
-  df.gen <- df.gen %>%
-    mutate(
-      prob.p = mo$fitted.values, #change this for predict of a new df?
+  if (length(grep(paste0(station,'.p.lag'), labels(terms(mu.form)))) < 1 & 
+      length(grep(paste0(station,'.p.lag'), labels(terms(formula(mo))))) < 1){
+    
+    X_data <- Xo[, names(Xq)]
+    
+    cat('mu..')
+    mu.new <- suppressWarnings(
+      predict(mq2, newdata = X_data, what = 'mu', type = 'response')
+    )
+    cat('sigma..')
+    sigma.new <- suppressWarnings(
+      predict(mq2, newdata = X_data, what = 'sigma', type = 'response')
+    )
+    
+    
+    df.gen <- Xo %>% select(datetime)
+    
+    df.gen <- df.gen %>%
+      mutate(
+        prob.p = mo$fitted.values, #change this for predict of a new df?
+        mu.fv = mu.new,
+        sigma.fv = sigma.new,
+        shape.fv = 1 / sigma.new^2,
+        rate.fv = 1 / sigma.new^2 / mu.new, #shape/mu
+        p.day.obs = X_data[[paste0(station, '.p')]]
+      )
+    
+    
+    # Matriz de Bernoulli (lluvia o no)
+    n_days <- nrow(df.gen)
+    rain_matrix <- matrix(runif(n_days * n.sim), nrow = n_days, ncol = n.sim) <= df.gen$prob.p
+    
+    # Matriz de gamma (simulaciones de lluvia)
+    gamma_matrix <- matrix(rgamma(n_days * n.sim, shape = rep(df.gen$shape.fv, n.sim),
+                                  rate = rep(df.gen$rate.fv, n.sim)), 
+                           nrow = n_days, ncol = n.sim)
+    
+    # Asignamos 0 donde no llueve
+    gamma_matrix[!rain_matrix] <- 0
+    
+    # Convertimos la matriz a columnas en df.gen
+    sim_df <- as.data.frame(gamma_matrix)
+    names(sim_df) <- paste0("p.day.sim.", 1:n.sim)
+    
+    df.gen <- cbind(df.gen, sim_df)
+    
+    assign(paste0('df.gen.day.', station), df.gen)
+    
+    rm(list = c('df.gen', 'sim_df', 'gamma_matrix',
+                'rain_matrix', 'n_days', 'sigma.new',
+                'mu.new', 'X_data', 'Xo', 'Xq', 'mq2',
+                'mu.form', 'sigma.form', 'mo', 'mq'))
+  }else {
+    # --- Simular día a día (versión que descarta simulaciones inválidas) ---
+    X_data <- Xo[, names(Xq)] # predict in gamlss, requires the same order in the columns
+    
+    # nuevos mu y sigma necesarios para la primera fecha
+    cat('Hora 1\n')
+    cat('mu..')
+    mu.new <- suppressWarnings(
+      predict(mq2, newdata = X_data[1, , drop = FALSE], what = 'mu', type = 'response')
+    )
+    cat('sigma..\n')
+    sigma.new <- suppressWarnings(
+      predict(mq2, newdata = X_data[1, , drop = FALSE], what = 'sigma', type = 'response')
+    )
+    
+    df.gen <- Xo %>% select(datetime)
+    
+    df.gen <- df.gen %>%
+      mutate(
+        prob.p = NA,
+        mu.fv = NA,
+        sigma.fv = NA,
+        shape.fv = NA,
+        rate.fv = NA,
+        p.day.obs = X_data[[paste0(station, '.p')]]
+      )
+    
+    # parámetros para el día 1 (estos son vectores escalares porque representan "la estructura")
+    df.gen[1, c(2:(ncol(df.gen) - 1))] <- c(
+      prob.p = mo$fitted.values[1],
       mu.fv = mu.new,
       sigma.fv = sigma.new,
       shape.fv = 1 / sigma.new^2,
-      rate.fv = 1 / sigma.new^2 / mu.new, #shape/mu
-      p.h.obs = Xo[[paste0(station, '.p')]]
+      rate.fv = 1 / sigma.new^2 / mu.new
     )
+    
+    # Inicializar matriz de simulaciones: filas = días, columnas = simulaciones
+    n_days <- nrow(df.gen)
+    sim_matrix <- matrix(NA_real_, nrow = n_days, ncol = n.sim)
+    colnames(sim_matrix) <- paste0("p.day.sim.", 1:n.sim)
+    
+    # Simulación día 1 (para todas las n.sim)
+    rain_vec <- runif(n.sim) <= df.gen$prob.p[1]
+    gamma_vec <- rgamma(n.sim, shape = rep(1 / df.gen$sigma.fv[1]^2, n.sim),
+                        rate = rep(1 / df.gen$sigma.fv[1]^2 / df.gen$mu.fv[1], n.sim))
+    gamma_vec[!rain_vec] <- 0
+    sim_matrix[1, ] <- gamma_vec
+    
+    # Índices de simulaciones activas (las que aún no han sido descartadas)
+    active_sims <- seq_len(n.sim)
+    
+    # Umbral para considerar un valor "absurdo" — aquí uso el percentil 0.999 histórico
+    umbral <- quantile(X_data[[paste0(station, '.p')]], probs = 0.999, na.rm = TRUE)
+    # Si prefieres un valor fijo, reemplaza la línea anterior, p.ej. umbral <- 2000
+    
+    # Loop día a día
+    for (i in 2:nrow(df.gen)) {
+      cat('Dia ', i, ' \n')
+      
+      if (length(active_sims) == 0) {
+        cat("No quedan simulaciones activas en el día ", i, ". Terminando.\n")
+        break
+      }
+      
+      # Preparamos aux con una fila repetida por cada simulación activa
+      aux <- X_data[i, , drop = FALSE]
+      aux <- aux[rep(1, length(active_sims)), , drop = FALSE]
+      
+      # Lag = valor simulado el día anterior para cada simulación activa
+      lag_values <- sim_matrix[i - 1, active_sims]
+      
+      # Detectar cuáles son inválidos ahora (NA, Inf, o > umbral)
+      bad_idx_rel <- which(!is.finite(lag_values) | is.na(lag_values) | (lag_values > 500))
+      if (length(bad_idx_rel) > 0) {
+        # Mapear a índices absolutos en el conjunto original de simulaciones
+        bad_idx_abs <- active_sims[bad_idx_rel]
+        cat("  ⚠️ Detectadas simulaciones inválidas en día ", i - 1, ": ",
+            paste0(bad_idx_abs, collapse = ", "), " -> descartando\n")
+        # Dejamos NA explícito (ya lo es) en la fila pasada; pero por claridad:
+        sim_matrix[i - 1, bad_idx_abs] <- NA_real_
+        # Eliminamos esas simulaciones de active_sims para que no se usen como lag en adelante
+        active_sims <- setdiff(active_sims, bad_idx_abs)
+      }
+      
+      # Si tras eliminar no queda ninguna simulación válida, salimos
+      if (length(active_sims) == 0) {
+        cat("No quedan simulaciones activas tras depuración en día ", i, ". Terminando.\n")
+        break
+      }
+      
+      # Reconstruir aux con la nueva longitud de simulaciones activas
+      aux <- X_data[i, , drop = FALSE]
+      aux <- aux[rep(1, length(active_sims)), , drop = FALSE]
+      aux[[paste0(station, '.p.lag')]] <- as.numeric(sim_matrix[i - 1, active_sims])
+      
+      aux <- aux[, names(Xq)]
+      aux2 <- aux
+      
+      # obtención de mu y sigma solo para simulaciones activas
+      cat('mu..')
+      aux2$mu.new <- suppressWarnings(
+        predict(mq2, newdata = aux, what = 'mu', type = 'response')
+      )
+      cat('sigma..')
+      aux2$sigma.new <- suppressWarnings(
+        predict(mq2, newdata = aux, what = 'sigma', type = 'response')
+      )
+      
+      # obtención de probabilidad de lluvia solo para simulaciones activas
+      cat('prob..\n')
+      aux2$prob.h <- predict(mo, newdata = aux, type = 'response')
+      
+      # Simular solo para las filas activas
+      aux2 <- aux2 %>%
+        select(prob.h, mu.new, sigma.new) %>%
+        rowwise() %>%
+        mutate(
+          shape.fv = 1 / sigma.new^2,
+          rate.fv = 1 / sigma.new^2 / mu.new
+        ) %>%
+        ungroup() %>%
+        rowwise() %>%
+        mutate(
+          sim = ifelse(runif(1) <= prob.h, rgamma(1, shape = shape.fv, rate = rate.fv), 0)
+        ) %>%
+        ungroup()
+      
+      # Guardar las simulaciones activas en la matriz en la posición correspondiente
+      sim_matrix[i, active_sims] <- as.numeric(aux2$sim)
+      
+      # Nota: las columnas correspondientes a simulaciones descartadas permanecen en NA
+    } # end for days
+    
+    # Convertir sim_matrix en data.frame con nombres adecuados y añadir a df.gen
+    sim_df <- as.data.frame(sim_matrix)
+    names(sim_df) <- paste0("p.h.sim.", 1:n.sim)
+    df.gen <- cbind(df.gen, sim_df)
+    
+    assign(paste0('df.gen.h.', station), df.gen)
+    
+    rm(list = c('df.gen', 'sim_df', 'sim_matrix', 
+                'rain_vec', 'gamma_vec', 'n_days', 'sigma.new',
+                'mu.new', 'X_data', 'Xo', 'Xq', 'mq2',
+                'mu.form', 'sigma.form', 'mo', 'mq'))
+    
+    cat(length(active_sims), ' han sobrevivido a la simulación')
+  }
   
-  # n.simulations
-  n_days <- nrow(df.gen)
-  rain_matrix <- matrix(runif(n_days * n.sim), nrow = n_days, ncol = n.sim) <= df.gen$prob.p
   
-  # Matriz de gamma (simulaciones de lluvia)
-  gamma_matrix <- matrix(rgamma(n_days * n.sim, shape = rep(df.gen$shape.fv, n.sim),
-                                rate = rep(df.gen$rate.fv, n.sim)), 
-                         nrow = n_days, ncol = n.sim)
-  
-  # Asignamos 0 donde no llueve
-  gamma_matrix[!rain_matrix] <- 0
-  
-  # Convertimos la matriz a columnas en df.gen
-  sim_df <- as.data.frame(gamma_matrix)
-  names(sim_df) <- paste0("p.h.sim.", 1:n.sim)
-  
-  df.gen <- cbind(df.gen, sim_df)
-  
-  assign(paste0('df.gen.h.', station), df.gen)
-  
-  rm(list = c('df.gen', 'sim_df', 'gamma_matrix',
-              'rain_matrix', 'n_days', 'sigma.new',
-              'mu.new', 'X_data', 'Xo', 'Xq', 'mq2',
-              'mu.form', 'sigma.form', 'mo', 'mq'))
 }
 
 
@@ -555,8 +866,9 @@ basura2 <- hourly.generator(station = estaciones[1],
 
 basura2 <- get(paste0('df.gen.h.',station))
 plot(density(basura2[['p.h.obs']]), col = 'blue', lwd = 2, 
-     xlim = c(0, max(basura2[,paste0('p.h.sim.', 1:n.sim)])))
-for(i in 1:n.sim){
+     xlim = c(0, max(basura2[,paste0('p.h.sim.', active_sims)]))
+     )
+for(i in active_sims){
   lines(
     density(basura2[[paste0('p.h.sim.', i)]]), 
     col = 'red', lwd = 2
