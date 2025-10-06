@@ -215,21 +215,24 @@ step_rlog <- function(initial_model,
     }
   }
   
-  for (h in harmonics.h){
-    
-    formula.aux <- update(formula(mod.aux), paste(". ~ . +", paste(h, collapse = '+')))
-    
-    mod.temp <- glm(formula.aux, data = data, family = binomial(logit))
-    
-    if (AIC(mod.temp, k = k) < AIC(mod.aux, k = k)){
-      cat('Added: ',paste(h, collapse = '+'), '\n')
-      cat(step, ': ', AIC(mod.temp, k = k), '\n')
+  if (!is.null(harmonics.h)){
+    for (h in harmonics.h){
       
-      mod.aux <- mod.temp
-    }else{
-      break
+      formula.aux <- update(formula(mod.aux), paste(". ~ . +", paste(h, collapse = '+')))
+      
+      mod.temp <- glm(formula.aux, data = data, family = binomial(logit))
+      
+      if (AIC(mod.temp, k = k) < AIC(mod.aux, k = k)){
+        cat('Added: ',paste(h, collapse = '+'), '\n')
+        cat(step, ': ', AIC(mod.temp, k = k), '\n')
+        
+        mod.aux <- mod.temp
+      }else{
+        break
+      }
     }
   }
+  
   
   cat('\nFinal model: ', deparse(formula(mod.aux)), '\n')
   cat(step, ': ', AIC(mod.aux, k = k), '\n\n')
@@ -241,18 +244,19 @@ step_glm <- function(initial_model,
                      data,
                      vars,
                      harmonics.l, 
-                     harmonics.h,
-                     type){ 
+                     harmonics.h ){ 
   
   
-  if(type == 'day'){
-    sigma.formula <- as.formula('~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365))')
-  }else if(type == 'hour'){
-    sigm.formula <- as.formula('~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
-                                I(sin(2*pi*h/24)) + I(cos(2*pi*h/24))')
-  }else{
-    stop("type not valis. Use 'day' or 'hour'.")
-  }
+  # if(type == 'day'){
+  #   sigma.formula <- as.formula('~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365))')
+  # }else if(type == 'hour'){
+  #   sigma.formula <- as.formula('~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
+  #                               I(sin(2*pi*h/24)) + I(cos(2*pi*h/24))')
+  # }else{
+  #   stop("type not valis. Use 'day' or 'hour'.")
+  # }
+  
+  # print(sigma.formula)
   
   mod.aux <- initial_model
   cat('Initial model ', deparse(formula(mod.aux)), '\n')
@@ -260,7 +264,7 @@ step_glm <- function(initial_model,
   
   scope.aux <- update(formula(mod.aux), paste('. ~ . +', paste(vars, collapse = '+')))
   
-  mod.aux <- step(mod.aux, scope = scope.aux, direction = 'both', trace = FALSE)
+  mod.aux <- step(mod.aux, scope = scope.aux, direction = 'both', trace = F)
   
   cat('Model after ', 'AIC ', 'step algorithm for variables: ', deparse(formula(mod.aux)), '\n')
   cat('AIC: ', AIC(mod.aux), '\n')
@@ -271,7 +275,7 @@ step_glm <- function(initial_model,
     formula.aux <- update(formula(mod.aux), paste(". ~ . +", paste(h, collapse = '+')))
     
     mod.temp <- gamlss(formula.aux, 
-                       sigma.fo = sigma.formula, 
+                       sigma.fo = mod_null$sigma.formula, 
                        family = GA, 
                        data = data,
                        trace = F)
@@ -286,21 +290,28 @@ step_glm <- function(initial_model,
     }
   }
   
-  for (h in harmonics.h){
-    
-    formula.aux <- update(formula(mod.aux), paste(". ~ . +", paste(h, collapse = '+')))
-    
-    mod.temp <- glm(formula.aux, data = data, family = binomial(logit))
-    
-    if (AIC(mod.temp, k = k) < AIC(mod.aux, k = k)){
-      cat('Added: ',paste(h, collapse = '+'), '\n')
-      cat(step, ': ', AIC(mod.temp, k = k), '\n')
+  if (!is.null(harmonics.h)){
+    for (h in harmonics.h){
       
-      mod.aux <- mod.temp
-    }else{
-      break
+      formula.aux <- update(formula(mod.aux), paste(". ~ . +", paste(h, collapse = '+')))
+      
+      mod.temp <- gamlss(formula.aux, 
+                         sigma.fo = mod_null$sigma.formula, 
+                         family = GA, 
+                         data = data,
+                         trace = F)
+      
+      if (AIC(mod.temp) < AIC(mod.aux)){
+        cat('Added: ',paste(h, collapse = '+'), '\n')
+        cat('AIC: ', AIC(mod.temp), '\n')
+        
+        mod.aux <- mod.temp
+      }else{
+        break
+      }
     }
   }
+  
   
   
   cat('\nFinal model: ', deparse(formula(mod.aux)), '\n')
@@ -333,23 +344,23 @@ deg_lag <- c(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
              3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
 names(deg_lag) <- estaciones
 
-for (station in estaciones[1]){
+for (station in estaciones){
   cat('Ajuste modelos estación ', station, '\n')
   #ocurrencia horaria
   cat('\nModelo de ocurrencia horario\n')
   X <- MHO[[station]]$X
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), 
                     format = '%Y-%m-%d')
-  X <- X %>%
-    filter(date >= per.comun.h[1] & date <= per.comun.h[2])
+  
+  ind <- which(X$date >= per.comun.h[1] & X$date <= per.comun.h[2])
   
   deg.lag <- degrees.p.lag[station]
   deg.day <- degrees.p.day[station]
   
-  mod_null <- glm(Y ~ 1, family = binomial(logit), data = X)
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = MHO[[station]]$X[ind, ])
   
   common.models[[station]][['MHO.pc.sel']] <- step_rlog(mod_null, 
-                                              data = X, 
+                                              data = MHO[[station]]$X[ind, ], 
                                               vars = c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
                                                        paste0('poly(', station, '.p.lag, ',deg.lag, ')'),
                                                        paste0(station,'.p.lag:',station,'.p.day')), 
@@ -360,13 +371,12 @@ for (station in estaciones[1]){
   X <- MDO[[station]]$X
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), 
                     format = '%Y-%m-%d')
-  X <- X %>%
-    filter(date >= per.comun.day[1] & date <= per.comun.day[2])
+  ind <- which(X$date >= per.comun.day[1] & X$date <= per.comun.day[2])
   
   #deg.list <- deg_list[[station]]
   deg.lag <- deg_lag[station]
   
-  mod_null <- glm(Y ~ 1, family = binomial(logit), data = X)
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = MDO[[station]]$X[ind, ])
   
   # aux <- paste0('poly(', names(deg.list)[1], ', ', deg.list[1], ')')
   # for (i in 2:length(deg.list)){
@@ -379,10 +389,10 @@ for (station in estaciones[1]){
   #                                                                paste0('poly(', station, '.p.lag, ', deg.lag, ')')),
   #                                                       harmonics.l, harmonics.h)
   common.models[[station]][['MDO.pc.sel']] <- step_rlog(mod_null,
-                                               data = X,
+                                               data = MDO[[station]]$X[ind, ],
                                                vars = c(colnames(X)[16:(ncol(X) - 1)],
                                                         paste0('poly(', station, '.p.lag, ', deg.lag, ')')),
-                                               harmonics.l, harmonics.h = list())
+                                               harmonics.l, harmonics.h = NULL)
   
   
   # cantidad horario
@@ -390,8 +400,8 @@ for (station in estaciones[1]){
   X <- MHQ[[station]]$X
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), 
                     format = '%Y-%m-%d')
-  X <- X %>%
-    filter(date >= per.comun.h[1] & date <= per.comun.h[2])
+  
+  ind <- which(X$date >= per.comun.h[1] & X$date <= per.comun.h[2])
   
   deg.lag <- degrees.p.lag2[station]
   deg.day <- degrees.p.day2[station]
@@ -400,36 +410,35 @@ for (station in estaciones[1]){
                      sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
                        I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
                      family = GA, 
-                     data = X,
+                     data = MHQ[[station]]$X[ind, ],
                      trace = F)
   
   common.models[[station]][['MHQ.pc.sel']] <- step_glm(mod_null, 
-                                            data = X, 
+                                            data = MHQ[[station]]$X[ind, ], 
                                             vars = c(paste0('poly(', station, '.p.day, ',deg.day, ')'), 
                                                      paste0('poly(', station, '.p.lag, ',deg.lag, ')'),
                                                      paste0(station,'.p.lag:',station,'.p.day')), 
-                                            harmonics.l, harmonics.h, 
-                                            type = 'hour')
+                                            harmonics.l, harmonics.h)
   
   #cantidad diario
+  cat('\nModelo de cantidad diario\n')
   X <- MDQ[[station]]$X
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), 
                     format = '%Y-%m-%d')
-  X <- X %>%
-    filter(date >= per.comun.day[1] & date <= per.comun.day[2])
+  
+  ind <- which(X$date >= per.comun.day[1] & X$date <= per.comun.day[2])
   
   mod_null <- gamlss(as.formula(paste(paste0(station, '.p'), '~ 1')), 
                      sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
                      family = GA, 
-                     data = MDQ[[station]]$X,
+                     data = MDQ[[station]]$X[ind, ],
                      trace = F)
   
   common.models[[station]][['MDQ.pc.sel']] <- step_glm(mod_null, 
-                                                       data = X, 
+                                                       data = MDQ[[station]]$X[ind, ], 
                                                        vars = c(colnames(X)[16:(ncol(X) - 1)],
                                                                paste0('poly(', station, '.p.lag, ', deg.lag, ')')), 
-                                                       harmonics.l, harmonics.h = list(),
-                                                       type = 'day')
+                                                       harmonics.l, harmonics.h = NULL)
 }
 
 

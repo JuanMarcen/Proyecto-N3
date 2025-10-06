@@ -71,6 +71,7 @@ cpoints <- st_transform(
 
 
 #AEMET
+library(readxl)
 AEMET <- read_excel("C:/Users/jumar/OneDrive/Escritorio/N3/datos AEMET/estaciones-precipitación-horaria.xlsx")
 AEMET <- AEMET %>%
   filter(

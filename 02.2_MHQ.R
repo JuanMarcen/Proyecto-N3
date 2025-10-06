@@ -293,7 +293,7 @@ harmonics.h <- list(
 
 
 M6_list <- list()
-for (station in estaciones){
+for (station in estaciones[1]){
   cat('Estación ', station, '\n\n')
   
   deg.lag <- degrees.p.lag[station]
