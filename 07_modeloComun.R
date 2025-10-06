@@ -441,5 +441,97 @@ for (station in estaciones){
                                                        harmonics.l, harmonics.h = NULL)
 }
 
+qsave(common.models, 'common.models.qs', preset = 'archive', compress_level = 22)
+
+common.models <- qread('common.models.qs')
 
 
+#----comparacion modelos----
+library(pROC)
+library(ggplot2)
+
+comp.models <- function(estaciones, mod.type, models.list, period, common, sel, AUC = NULL){
+  df <- data.frame(
+    station = estaciones
+  )
+  
+  for (i in 1:length(estaciones)){
+    station <- estaciones[i]
+    
+    X <- mod.type[[station]]$X
+    X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), 
+                      format = '%Y-%m-%d')
+    
+    ind <- which(X$date >= period[1] & X$date <= period[2])
+    
+    mod.common <- models.list[[station]][[common]]
+    mod.sel <- models.list[[station]][[sel]]
+    
+    if (!is.null(AUC)){
+      roc.mod.common <- suppressMessages(
+        roc(X$Y[ind], predict(mod.common, type = 'response'))
+        )
+      roc.mod.sel <- suppressMessages(
+        roc(X$Y[ind], predict(mod.sel, type = 'response'))
+      )
+      
+      df[i, 'AUC.mod.common'] <- auc(roc.mod.common)
+      df[i, 'AUC.mod.sel'] <- auc(roc.mod.sel)
+  
+    }
+    
+    df[i, 'AIC.mod.common'] <- AIC(mod.common)
+    df[i, 'AIC.mod.sel'] <- AIC(mod.sel)
+  }
+  
+  
+  return(df)
+  
+}
+
+
+df.MHO <- comp.models(estaciones, MHO, common.models, per.comun.h, 'MHO.pc', 'MHO.pc.sel', AUC = TRUE)
+df.MDO <- comp.models(estaciones, MDO, common.models, per.comun.day, 'MDO.pc', 'MDO.pc.sel', AUC = TRUE)
+df.MHQ <- comp.models(estaciones, MHQ, common.models, per.comun.h, 'MHQ.pc', 'MHQ.pc.sel')
+df.MDQ <- comp.models(estaciones, MDQ, common.models, per.comun.day, 'MDQ.pc', 'MDQ.pc.sel')
+
+#----guardado de coss solo necesarias----
+df.comp <- list(
+  MHO = df.MHO,
+  MDO = df.MDO,
+  MHQ = df.MHQ,
+  MDQ = df.MDQ 
+)
+
+qsave(df.comp, 'df.comp.qs')
+
+data.common.models <- list()
+for (station in estaciones){
+  cat('Estación ', station, '\n')
+  data.common.models[[station]][['MHO.pc.vars']] <- common.models[[station]][['MHO.pc']]$coefficients
+  data.common.models[[station]][['MHO.pc.IC']] <- confint.default(common.models[[station]][['MHO.pc']])
+  data.common.models[[station]][['MHO.pc.sel.vars']] <- common.models[[station]][['MHO.pc.sel']]$coefficients
+  data.common.models[[station]][['MHO.pc.sel.IC']] <- confint.default(common.models[[station]][['MHO.pc.sel']])
+  
+  data.common.models[[station]][['MDO.pc.vars']] <- common.models[[station]][['MDO.pc']]$coefficients
+  data.common.models[[station]][['MDO.pc.IC']] <- confint.default(common.models[[station]][['MDO.pc']])
+  data.common.models[[station]][['MDO.pc.sel.vars']] <- common.models[[station]][['MDO.pc.sel']]$coefficients
+  data.common.models[[station]][['MDO.pc.sel.IC']] <- confint.default(common.models[[station]][['MDO.pc.sel']])
+  
+  data.common.models[[station]][['MDQ.pc.mu.vars']] <- common.models[[station]][['MDQ.pc']]$mu.coefficients
+  data.common.models[[station]][['MDQ.pc.sigma.vars']] <- common.models[[station]][['MDQ.pc']]$sigma.coefficients
+  data.common.models[[station]][['MDQ.pc.IC']] <- confint(common.models[[station]][['MDQ.pc']])
+  data.common.models[[station]][['MDQ.pc.sel.mu.vars']] <- common.models[[station]][['MDQ.pc.sel']]$mu.coefficients
+  data.common.models[[station]][['MDQ.pc.sel.sigma.vars']] <- common.models[[station]][['MDQ.pc.sel']]$sigma.coefficients
+  data.common.models[[station]][['MDQ.pc.sel.IC']] <- confint(common.models[[station]][['MDQ.pc.sel']])
+  
+  data.common.models[[station]][['MHQ.pc.mu.vars']] <- common.models[[station]][['MHQ.pc']]$mu.coefficients
+  data.common.models[[station]][['MHQ.pc.sigma.vars']] <- common.models[[station]][['MHQ.pc']]$sigma.coefficients
+  data.common.models[[station]][['MHQ.pc.IC']] <- confint(common.models[[station]][['MHQ.pc']])
+  data.common.models[[station]][['MHQ.pc.sel.mu.vars']] <- common.models[[station]][['MHQ.pc.sel']]$mu.coefficients
+  data.common.models[[station]][['MHQ.pc.sel.sigma.vars']] <- common.models[[station]][['MHQ.pc.sel']]$sigma.coefficients
+  data.common.models[[station]][['MHQ.pc.sel.IC']] <- confint(common.models[[station]][['MHQ.pc.sel']])
+}
+
+
+qsave(data.common.models, 'data.common.models.qs')
