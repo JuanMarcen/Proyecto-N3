@@ -495,7 +495,7 @@ df.MDO <- comp.models(estaciones, MDO, common.models, per.comun.day, 'MDO.pc', '
 df.MHQ <- comp.models(estaciones, MHQ, common.models, per.comun.h, 'MHQ.pc', 'MHQ.pc.sel')
 df.MDQ <- comp.models(estaciones, MDQ, common.models, per.comun.day, 'MDQ.pc', 'MDQ.pc.sel')
 
-#----guardado de coss solo necesarias----
+#guardado de cosas 
 df.comp <- list(
   MHO = df.MHO,
   MDO = df.MDO,
@@ -504,6 +504,116 @@ df.comp <- list(
 )
 
 qsave(df.comp, 'df.comp.qs')
+df.comp <- qread('df.comp.qs')
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(ggnewscale)
+
+heat.map <- function(df, n.metrics = 1, title){
+  if (n.metrics == 2){
+    df_long <- df %>%
+      pivot_longer(cols = -station, names_to = "variable", values_to = "value") %>%
+      mutate(Tipo = ifelse(grepl("AUC", variable), "AUC", "AIC"))
+    
+    # Añadir columna con AIC.mod.pc por estación
+    df_long <- df_long %>%
+      left_join(
+        df %>% select(station, AIC.mod.common),
+        by = "station"
+      ) %>%
+      mutate(
+        value_rel = ifelse(Tipo == "AIC", value / AIC.mod.common, value)  # AIC relativo si es tipo AIC
+      )
+    
+    df_long <- df_long %>%
+      mutate(
+        station = factor(station, levels = unique(station)),
+        variable = factor(variable, levels = unique(variable))
+      )
+    
+    ggplot() +
+      # AUC
+      geom_tile(data = df_long %>% filter(Tipo == "AUC"),
+                aes(x = variable, y = station, fill = value), color = "white") +
+      geom_text(data = df_long %>% filter(Tipo == 'AUC'),
+                aes(x = variable, y = station, label = round(value, 3))) +
+      scale_fill_gradientn(
+        colors = c("blue", "lightblue", "orange", "red"),
+        limits = c(min(df_long[which(df_long$Tipo == 'AUC'), 'value']),max(df_long[which(df_long$Tipo == 'AUC'), 'value'])),
+        name = "AUC",
+      ) +
+      new_scale_fill() +  # reinicia escala
+      
+      # AIC
+      geom_tile(data = df_long %>% filter(Tipo == "AIC"),
+                aes(x = variable, y = station, fill = value_rel), color = "white") +
+      geom_text(data = df_long %>% filter(Tipo == 'AIC'),
+                aes(x = variable, y = station, label = round(value_rel, 4))) +
+      scale_fill_gradientn(
+        colors = c("yellow", "white", "purple"),
+        name = "Row relative \n AIC",
+        breaks = c(min(df_long[which(df_long$Tipo == 'AIC'), 'value_rel']), 0.5, max(df_long[which(df_long$Tipo == 'AIC'), 'value_rel'])),
+        labels = c("min", "", "max")
+      ) +
+      
+      theme_minimal(base_size = 14) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      ggtitle(label = title)
+  }
+  else if (n.metrics == 1){
+    df_long <- df %>%
+      pivot_longer(cols = -station, names_to = "variable", values_to = "value")
+    
+    # Añadir columna con AIC.mod.pc por estación
+    df_long <- df_long %>%
+      left_join(
+        df %>% select(station, AIC.mod.common),
+        by = "station"
+      ) %>%
+      mutate(
+        value_rel = value / AIC.mod.common, value  # AIC relativo si es tipo AIC
+      )
+    
+    df_long <- df_long %>%
+      mutate(
+        station = factor(station, levels = unique(station)),
+        variable = factor(variable, levels = unique(variable))
+      )
+    
+    ggplot() +
+      # AIC
+      geom_tile(data = df_long,
+                aes(x = variable, y = station, fill = value_rel), color = "white") +
+      geom_text(data = df_long,
+                aes(x = variable, y = station, label = round(value_rel, 4))) +
+      scale_fill_gradientn(
+        colors = c("#277DF5", "white", "red"),
+        name = "Row relative \n AIC",
+        breaks = c(min(df_long[, 'value_rel']), 0.5, max(df_long[, 'value_rel'])),
+        labels = c("min", "", "max")
+      ) +
+      
+      theme_minimal(base_size = 14) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      ggtitle(label = title)
+  }
+  else{
+    stop("'n.metrics not valid. Use 1 or 2")
+  }
+}
+
+heat.map(df.comp$MHO, n.metrics = 2, title = 'MHO')
+heat.map(df.comp$MDO, n.metrics = 2, title = 'MDO')
+heat.map(df.comp$MHQ, n.metrics = 1, title = 'MHQ')
+heat.map(df.comp$MDQ, n.metrics = 1, title = 'MDQ')
+
+# model MHO not really good
+
+
+
+#----analisis de comunalidades----
 
 data.common.models <- list()
 for (station in estaciones){
@@ -532,6 +642,5 @@ for (station in estaciones){
   data.common.models[[station]][['MHQ.pc.sel.sigma.vars']] <- common.models[[station]][['MHQ.pc.sel']]$sigma.coefficients
   data.common.models[[station]][['MHQ.pc.sel.IC']] <- confint(common.models[[station]][['MHQ.pc.sel']])
 }
-
 
 qsave(data.common.models, 'data.common.models.qs')
