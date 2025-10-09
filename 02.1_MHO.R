@@ -403,6 +403,70 @@ for (station in estaciones){
 rm('M8_list')
 saveRDS(MHO, 'MHO.rds')
 
+
+# M9: new transformations
+
+for (station in estaciones){
+  X <- MHO[[station]]$X
+  #variable lag
+  # mod.lag <- gam(formula = as.formula(paste0('Y ~ s(', station, '.p.lag)')), data = X,
+  #                family = binomial)
+  # plot(mod.lag, main = paste(station))
+  #variable del dia
+  mod.day <- gam(formula = as.formula(paste0('Y ~ s(', station, '.p.day)')), data = X,
+                 family = binomial)
+  plot(mod.day, main = paste(station))
+}
+
+#0 equivale a usar logatirmo
+degrees.p.lag <- c(2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 
+                   2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+names(degrees.p.lag) <- estaciones
+degrees.p.day <- c(3, 3, 3, 0, 3, 3, 1, 0, 0, 0, 3, 0, 0, 0, 0, 3, 
+                   0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0)
+names(degrees.p.day) <- estaciones
+M9_list <- list()
+for (station in estaciones){
+  cat('Estación ',station, '\n')
+  
+  station.p <- paste0(station, '.p')
+  
+  deg.lag <- degrees.p.lag[station]
+  deg.day <- degrees.p.day[station]
+  
+  vars <- c()
+  if (deg.lag == 0){
+    vars <- c(vars, paste0('I(log(', station.p, '.lag))' ))
+  }else{
+    vars <- c(vars, paste0('poly(', station, '.p.lag, ',deg.lag, ')'))
+  }
+  
+  if (deg.day == 0){
+    vars <- c(vars, paste0('I(log(', station.p, '.day))' ))
+  }else{
+    vars <- c(vars, paste0('poly(', station, '.p.day, ',deg.day, ')'))
+  }
+  
+  vars <- c(vars, paste0(station,'.p.lag:',station,'.p.day'))
+  
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = MHO[[station]]$X)
+  
+  M9_list[[station]] <- step_rlog(mod_null, 
+                                  data = MHO[[station]]$X, 
+                                  vars = vars, 
+                                  harmonics.l = harmonics.l,
+                                  harmonics.h = harmonics.h)
+}
+
+for (station in estaciones){
+  MHO[[station]][['M9']] <- M9_list[[station]]
+  MHO[[station]][['vars.M9']] <- M9_list[[station]]$coefficients
+}
+rm('M9_list')
+qsave(MHO, 'MHO.qs')
+#saveRDS(MHO, 'MHO.rds')
+
+
 #----evaluation #put in a Rmarkdow----
 library(pROC)
 
@@ -437,23 +501,23 @@ for (station in estaciones){
 
 
 #plot all AUC and Roc curves: Comparison of models
-auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
-colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
+auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 10))
+colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9')
 rownames(auc.df) <- estaciones
 auc.df$station <- estaciones
 
-auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
-colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
+auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 10))
+colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9')
 rownames(auc.df.pc) <- estaciones
 auc.df.pc$station <- estaciones
 
-AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
-colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 10))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
 
-BIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
-colnames(BIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
+BIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 10))
+colnames(BIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9')
 rownames(BIC.df) <- estaciones
 BIC.df$station <- estaciones
 
@@ -466,6 +530,7 @@ for (station in estaciones){
   M6 <- MHO[[station]]$M6
   M7 <- MHO[[station]]$M7
   M8 <- MHO[[station]]$M8
+  M9 <- MHO[[station]]$M9
   X <- MHO[[station]]$X
   
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = "%Y-%m-%d")
@@ -482,6 +547,7 @@ for (station in estaciones){
   roc_M6 <- roc(X$Y, predict(M6, type = 'response'))
   roc_M7 <- roc(X$Y, predict(M7, type = 'response'))
   roc_M8 <- roc(X$Y, predict(M8, type = 'response'))
+  roc_M9 <- roc(X$Y, predict(M9, type = 'response'))
   
   roc_M1.pc <- roc(X$Y[ind], M1$fitted.values[ind])
   roc_M2.pc <- roc(X$Y[ind], M2$fitted.values[ind])
@@ -491,6 +557,7 @@ for (station in estaciones){
   roc_M6.pc <- roc(X$Y[ind], M6$fitted.values[ind])
   roc_M7.pc <- roc(X$Y[ind], M7$fitted.values[ind])
   roc_M8.pc <- roc(X$Y[ind], M8$fitted.values[ind])
+  roc_M9.pc <- roc(X$Y[ind], M9$fitted.values[ind])
   
   # plot(roc_M1,
   #      col = 'red',
@@ -522,18 +589,18 @@ for (station in estaciones){
   #        legend = c('M1', 'M2', 'M3', 'M4', 'M5'),
   #        col = c('red', 'blue', 'green', 'purple', 'orange'))
   
-  auc.df[station, 2:9] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
+  auc.df[station, 2:10] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
                                auc(roc_M4), auc(roc_M5), auc(roc_M6),
-                               auc(roc_M7), auc(roc_M8)), 3)
-  auc.df.pc[station, 2:9] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
+                               auc(roc_M7), auc(roc_M8), auc(roc_M9)), 3)
+  auc.df.pc[station, 2:10] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
                                   auc(roc_M4.pc), auc(roc_M5.pc), auc(roc_M6.pc),
-                                  auc(roc_M7.pc), auc(roc_M8.pc)), 3)
-  AIC.df[station, 2:9] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+                                  auc(roc_M7.pc), auc(roc_M8.pc), auc(roc_M9.pc)), 3)
+  AIC.df[station, 2:10] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
                                AIC(M4), AIC(M5), AIC(M6),
-                               AIC(M7), AIC(M8)), 2)
-  BIC.df[station, 2:9] <- round(c(BIC(M1), BIC(M2), BIC(M3), 
+                               AIC(M7), AIC(M8), AIC(M9)), 2)
+  BIC.df[station, 2:10] <- round(c(BIC(M1), BIC(M2), BIC(M3), 
                                BIC(M4), BIC(M5), BIC(M6),
-                               BIC(M7), BIC(M8)), 2)
+                               BIC(M7), BIC(M8), BIC(M9)), 2)
 }
 # library(writexl)
 # write_xlsx(AIC.df, "borrar.xlsx")

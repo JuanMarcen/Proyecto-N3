@@ -48,9 +48,10 @@ plot.auc.n.vars <- function(mo, estaciones, data){
   return(df)
 }
 
-mo <- 'M5'
-df.mho <- plot.auc.n.vars('M5', estaciones, MHO)
-# MHO escogido == 19
+mo <- 'M9'
+df.mho <- plot.auc.n.vars('M9', estaciones, MHO)
+# MHO escogido == 19 --> df.comp
+# MHO escogido == 1 --> df.comp.2
 df.mdo <- plot.auc.n.vars('M5', estaciones, MDO)
 # MDO escogido == 11
 
@@ -99,67 +100,181 @@ per.comun.day <- c(date.first, date.last)
 # ajuste de los modelos comunes en todo el periodo comun
 library(dplyr)
 library(gamlss)
-mod.comun <- function(station, per.comun, data, mod, chosen, type = 'log', subtype = NULL){
-  X <- data[[station]]$X
-  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), 
-                    format = '%Y-%m-%d')
-  X <- X %>%
-    filter(date >= per.comun[1] & date <= per.comun[2])
+#library(logistf)
+mod.comun <- function(station, per.comun, data, mod, chosen, 
+                      type = 'log', subtype = NULL, log_file = "errores_modelo.txt") {
   
-  if (type == 'log'){
-    vars <- labels(terms(data[[estaciones[chosen]]][[mod]]$formula))
-    vars <- gsub(estaciones[chosen], station, vars)
-    formula <- as.formula(paste('Y ~', 
-                                paste(vars, collapse = '+')))
-    
-    
-    #cat('Fórmula del modelo común: \n', deparse(formula), '\n')
-    
-    mod.per.comun <- glm(formula, family = binomial(logit), data = X)
-  }else if (type == 'gamma'){
-    
-    vars <- labels(terms(data[[estaciones[chosen]]][[mod]]$mu.formula))
-    vars <- gsub(estaciones[chosen], station, vars)
-    formula <- as.formula(paste(paste0(station, '.p'), '~', 
-                                paste(vars, collapse = '+')))
-    
-    if (subtype == 'day'){
-      
-      mod.per.comun <- gamlss(formula, 
-                              sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
-                              family = GA, 
-                              data = X,
-                              trace = F)
-      
-    }else if(subtype == 'hour'){
-      mod.per.comun <- gamlss(formula, 
-                              sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
-                                I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
-                              family = GA, 
-                              data = X,
-                              trace = F)
-    }else{
-      stop("Subtype not valid. Use 'day' or 'hour'.")
-    }
-    
-  }else{
-    stop("Type not valid. Use 'log' or 'gamma'.")
+  data_name <- deparse(substitute(data))
+  
+  # Inicializamos o añadimos cabecera
+  header <- paste0("=== Registro de ADVERTENCIAS en mod.comun ", data_name, " ===\n")
+  if(!file.exists(log_file)) {
+    writeLines(header, log_file)
+  } else {
+    cat(header, file = log_file, append = TRUE)
   }
   
+  # auxiliar para registrar advertencias
+  log_problem <- function(msg) {
+    timestamp <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    line <- paste0("[", timestamp, "] Estación: ", station, " - ", msg, "\n")
+    cat(line, file = log_file, append = TRUE)
+  }
+  
+  # PREPROCESADO
+  X <- data[[station]]$X
+  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = '%Y-%m-%d')
+  X <- X %>% filter(date >= per.comun[1] & date <= per.comun[2])
+  
+  mod.per.comun <- NULL
+  
+  # --- Ajuste del modelo ---
+  if (type == 'log') {
+    vars <- labels(terms(data[[estaciones[chosen]]][[mod]]$formula))
+    vars <- gsub(estaciones[chosen], station, vars)
+    formula <- as.formula(paste('Y ~', paste(vars, collapse = '+')))
+    # formula modification for no divergence
+    # formula <- update(
+    #   formula,
+    #   as.formula(
+    #     paste0(". ~ . - poly(", station, ".p.lag, 3) + ", station, ".p.lag")
+    #   )
+    # )
+    #formula modification for no divergence
+    # formula <- update(
+    #   formula,
+    #   as.formula(
+    #     paste0(". ~ . - s.2.h - c.2.h")
+    #   )
+    # )
+    
+    mod.per.comun <- tryCatch({
+      withCallingHandlers(
+        glm(formula, family = binomial(link = "logit"), data = X,
+            control = glm.control(epsilon = 1e-8, maxit = 100, trace = FALSE)),
+        warning = function(w) {
+          # registramos la advertencia
+          log_problem(paste("ADVERTENCIA (GLM):", conditionMessage(w)))
+          # intentamos mufflear, pero no fallaremos si no existe el restart
+          tryCatch(invokeRestart("muffleWarning"), error = function(e) NULL)
+        }
+      )
+    },
+    error = function(e) {
+      # Ignoramos errores completamente (no se imprimen ni registran)
+      return(NULL)
+    })
+    
+  } else if (type == 'gamma') {
+    vars <- labels(terms(data[[estaciones[chosen]]][[mod]]$mu.formula))
+    vars <- gsub(estaciones[chosen], station, vars)
+    formula <- as.formula(paste(paste0(station, '.p'), '~', paste(vars, collapse = '+')))
+    
+    mod.per.comun <- tryCatch({
+      withCallingHandlers(
+        {
+          if (subtype == 'day') {
+            gamlss(formula, 
+                   sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
+                   family = GA, data = X, trace = FALSE)
+          } else if (subtype == 'hour') {
+            gamlss(formula, 
+                   sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
+                     I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
+                   family = GA, data = X, trace = FALSE)
+          } else {
+            stop("Subtype not valid. Use 'day' or 'hour'.")
+          }
+        },
+        warning = function(w) {
+          log_problem(paste("ADVERTENCIA (GAMLSS):", conditionMessage(w)))
+          tryCatch(invokeRestart("muffleWarning"), error = function(e) NULL)
+        }
+      )
+    },
+    error = function(e) {
+      return(NULL)
+    })
+    
+  } else {
+    stop("Type not valid. Use 'log' or 'gamma'.")
+  }
   
   return(mod.per.comun)
 }
 
+
+
+
 common.models <- list()
 for(station in estaciones){
   cat('Estación ', station, '\n')
-  common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
-  common.models[[station]][['MDO.pc']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
-  common.models[[station]][['MHQ.pc']] <- mod.comun(station, per.comun.h, MHQ, 'M6', 15, type = 'gamma', subtype = 'hour')
-  common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
+  # common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
+  # common.models[[station]][['MHO.pc.2']] <- mod.comun(station, per.comun.h, MHO, 'M5', 1, type = 'log')
+  common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
+  # common.models[[station]][['MDO.pc']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
+  # common.models[[station]][['MHQ.pc']] <- mod.comun(station, per.comun.h, MHQ, 'M6', 15, type = 'gamma', subtype = 'hour')
+  # common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
 }
 
-# ajuste de modelos por selección AIC en el periodo común
+# DIVERGENT STATIONS
+mho.div.stations <- c('E085', 'R026', 'R062', 'P088', 'A042', 'P023', 'P024', 'A266', 'A058', 'EM12', 'P019')
+mho.2.div.stations <- c('E085', 'R026', 'R062', 'P088', 'P023', 'P024', 'A266', 'A126', 'A058', 'EM12', 'P019')
+mdo.div.stations <- c('R037')
+
+vars.div <- function(stations, models, model.type){
+  vars.div.list <- list()
+  for (station in stations){
+    data.aux <- models[[station]][[model.type]]$data
+    formula.aux <- models[[station]][[model.type]]$formula
+    mod.aux <- glm(formula.aux, data = data.aux, family = binomial(logit))
+    mod.aux.2 <- step(mod.aux)
+    
+    vars.div.list[[station]] <- setdiff(labels(terms(mod.aux$formula)), labels(terms(mod.aux.2$formula)))
+  }
+  
+  return(vars.div.list)
+}
+vars.div.mho <- vars.div(mho.div.stations, common.models, 'MHO.pc')
+vars.div.mho.2 <- vars.div(mho.2.div.stations, common.models, 'MHO.pc.2')
+vars.div.mdo <- vars.div(mdo.div.stations, common.models, 'MDO.pc')
+
+# qsave(vars.div.mho, 'vars.div.mho.qs')
+# qsave(vars.div.mho.2, 'vars.div.mho.2.qs')
+# qsave(vars.div.mdo, 'vars.div.mdo.qs')
+
+vars.div.mho <- qread('vars.div.mho.qs')
+vars.div.mho.2 <- qread('vars.div.mho.2.qs')
+vars.div.mdo <- qread('vars.div.mdo.qs')
+
+station <- mdo.div.stations[1]
+station.p <- paste0(station, '.p')
+data.aux <- common.models[[station]][['MDO.pc']]$data
+max(data.aux[[station.p]])
+summary(data.aux[[paste0(station.p, '.day')]])
+
+formula.aux <- common.models[[station]][['MDO.pc']]$formula
+print(formula.aux)
+mod.aux <- glm(formula.aux, data = data.aux, family = binomial(link = 'logit'))
+mod.aux
+basura <- gam(formula = Y ~ s(R037.p.lag)  , data = data.aux, family = binomial)
+plot(basura)
+
+mod.aux.firth <- logistf(formula.aux, data.aux)
+mod.aux.firth
+-2 * mod.aux.firth$loglik['full'] + 2 * length(mod.aux.firth$coefficients)
+# mod.aux.2 <- update(mod.aux, formula = as.formula(
+#   paste('.~. - ', paste0('poly(', station, '.p.lag, 3)'), '+', paste0(station, '.p.lag'),
+#         '-', paste0('poly(', station, '.p.day, 3)'), '+', paste0(station, '.p.day'))
+# ))
+mod.aux.2 <- step(mod.aux)
+
+no.vars <- setdiff(labels(terms(mod.aux$formula)), labels(terms(mod.aux.2$formula)))
+
+
+#looks like the lags give the problem so quit the pooly and add the normal in everyone?
+
+#----ajuste de modelos por selección AIC en el periodo común----
 # recuperar funciones de selección
 # selección ocurrencia
 harmonics.l <- list(
@@ -441,9 +556,9 @@ for (station in estaciones){
                                                        harmonics.l, harmonics.h = NULL)
 }
 
-qsave(common.models, 'common.models.qs', preset = 'archive', compress_level = 22)
-
-common.models <- qread('common.models.qs')
+# qsave(common.models, 'common.models.qs', preset = 'archive', compress_level = 22)
+# 
+# common.models <- qread('common.models.qs')
 
 
 #----comparacion modelos----
@@ -506,6 +621,47 @@ df.comp <- list(
 qsave(df.comp, 'df.comp.qs')
 df.comp <- qread('df.comp.qs')
 
+#construcción de otra comparación (SOLO MHO) y juntar al df.comp grande
+comp.models.2 <- function(estaciones, mod.type, models.list, period, common, AUC = NULL){
+  df <- data.frame(
+    station = estaciones
+  )
+  
+  for (i in 1:length(estaciones)){
+    station <- estaciones[i]
+    
+    X <- mod.type[[station]]$X
+    X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), 
+                      format = '%Y-%m-%d')
+    
+    ind <- which(X$date >= period[1] & X$date <= period[2])
+    
+    mod.common <- models.list[[station]][[common]]
+    
+    if (!is.null(AUC)){
+      roc.mod.common <- suppressMessages(
+        roc(X$Y[ind], predict(mod.common, type = 'response'))
+      )
+      
+      df[i, 'AUC.mod.common.2'] <- auc(roc.mod.common)
+      
+    }
+    
+    df[i, 'AIC.mod.common.2'] <- AIC(mod.common)
+  }
+  
+  
+  return(df)
+  
+}
+
+df.MHO.2 <- comp.models.2(estaciones, MHO, common.models, per.comun.h, 'MHO.pc.2', AUC = T)
+df.comp$MHO <- cbind(df.comp$MHO, df.MHO.2[, -1])
+df.comp$MHO <- df.comp$MHO[, c(1,2,6,3,4,7,5)]
+
+qsave(df.comp, 'df.comp.qs')
+df.comp <- qread('df.comp.qs')
+
 library(ggplot2)
 library(tidyr)
 library(dplyr)
@@ -520,11 +676,11 @@ heat.map <- function(df, n.metrics = 1, title){
     # Añadir columna con AIC.mod.pc por estación
     df_long <- df_long %>%
       left_join(
-        df %>% select(station, AIC.mod.common),
+        df %>% select(station, AIC.mod.sel),
         by = "station"
       ) %>%
       mutate(
-        value_rel = ifelse(Tipo == "AIC", value / AIC.mod.common, value)  # AIC relativo si es tipo AIC
+        value_rel = ifelse(Tipo == "AIC", value / AIC.mod.sel, value)  # AIC relativo si es tipo AIC
       )
     
     df_long <- df_long %>%
@@ -552,7 +708,7 @@ heat.map <- function(df, n.metrics = 1, title){
       geom_text(data = df_long %>% filter(Tipo == 'AIC'),
                 aes(x = variable, y = station, label = round(value_rel, 4))) +
       scale_fill_gradientn(
-        colors = c("yellow", "white", "purple"),
+        colors = c("#277DF5", "white", "red"),
         name = "Row relative \n AIC",
         breaks = c(min(df_long[which(df_long$Tipo == 'AIC'), 'value_rel']), 0.5, max(df_long[which(df_long$Tipo == 'AIC'), 'value_rel'])),
         labels = c("min", "", "max")
@@ -569,11 +725,11 @@ heat.map <- function(df, n.metrics = 1, title){
     # Añadir columna con AIC.mod.pc por estación
     df_long <- df_long %>%
       left_join(
-        df %>% select(station, AIC.mod.common),
+        df %>% select(station, AIC.mod.sel),
         by = "station"
       ) %>%
       mutate(
-        value_rel = value / AIC.mod.common, value  # AIC relativo si es tipo AIC
+        value_rel = value / AIC.mod.sel, value  # AIC relativo si es tipo AIC
       )
     
     df_long <- df_long %>%
@@ -609,38 +765,308 @@ heat.map(df.comp$MDO, n.metrics = 2, title = 'MDO')
 heat.map(df.comp$MHQ, n.metrics = 1, title = 'MHQ')
 heat.map(df.comp$MDQ, n.metrics = 1, title = 'MDQ')
 
-# model MHO not really good
+# model MHO not really good for any of the 2 chosen ones
+# the rest dont look bad
 
 
 
 #----analisis de comunalidades----
-
+# analyisis of CI of coefficients of models (ONLY COMMON MODELS)
 data.common.models <- list()
 for (station in estaciones){
   cat('Estación ', station, '\n')
   data.common.models[[station]][['MHO.pc.vars']] <- common.models[[station]][['MHO.pc']]$coefficients
   data.common.models[[station]][['MHO.pc.IC']] <- confint.default(common.models[[station]][['MHO.pc']])
+  data.common.models[[station]][['MHO.pc.2.vars']] <- common.models[[station]][['MHO.pc.2']]$coefficients
+  data.common.models[[station]][['MHO.pc.2.IC']] <- confint.default(common.models[[station]][['MHO.pc.2']])
   data.common.models[[station]][['MHO.pc.sel.vars']] <- common.models[[station]][['MHO.pc.sel']]$coefficients
-  data.common.models[[station]][['MHO.pc.sel.IC']] <- confint.default(common.models[[station]][['MHO.pc.sel']])
+  #data.common.models[[station]][['MHO.pc.sel.IC']] <- confint.default(common.models[[station]][['MHO.pc.sel']])
   
   data.common.models[[station]][['MDO.pc.vars']] <- common.models[[station]][['MDO.pc']]$coefficients
   data.common.models[[station]][['MDO.pc.IC']] <- confint.default(common.models[[station]][['MDO.pc']])
   data.common.models[[station]][['MDO.pc.sel.vars']] <- common.models[[station]][['MDO.pc.sel']]$coefficients
-  data.common.models[[station]][['MDO.pc.sel.IC']] <- confint.default(common.models[[station]][['MDO.pc.sel']])
+  #data.common.models[[station]][['MDO.pc.sel.IC']] <- confint.default(common.models[[station]][['MDO.pc.sel']])
   
   data.common.models[[station]][['MDQ.pc.mu.vars']] <- common.models[[station]][['MDQ.pc']]$mu.coefficients
   data.common.models[[station]][['MDQ.pc.sigma.vars']] <- common.models[[station]][['MDQ.pc']]$sigma.coefficients
   data.common.models[[station]][['MDQ.pc.IC']] <- confint(common.models[[station]][['MDQ.pc']])
   data.common.models[[station]][['MDQ.pc.sel.mu.vars']] <- common.models[[station]][['MDQ.pc.sel']]$mu.coefficients
   data.common.models[[station]][['MDQ.pc.sel.sigma.vars']] <- common.models[[station]][['MDQ.pc.sel']]$sigma.coefficients
-  data.common.models[[station]][['MDQ.pc.sel.IC']] <- confint(common.models[[station]][['MDQ.pc.sel']])
+  #data.common.models[[station]][['MDQ.pc.sel.IC']] <- confint(common.models[[station]][['MDQ.pc.sel']])
   
   data.common.models[[station]][['MHQ.pc.mu.vars']] <- common.models[[station]][['MHQ.pc']]$mu.coefficients
   data.common.models[[station]][['MHQ.pc.sigma.vars']] <- common.models[[station]][['MHQ.pc']]$sigma.coefficients
   data.common.models[[station]][['MHQ.pc.IC']] <- confint(common.models[[station]][['MHQ.pc']])
   data.common.models[[station]][['MHQ.pc.sel.mu.vars']] <- common.models[[station]][['MHQ.pc.sel']]$mu.coefficients
   data.common.models[[station]][['MHQ.pc.sel.sigma.vars']] <- common.models[[station]][['MHQ.pc.sel']]$sigma.coefficients
-  data.common.models[[station]][['MHQ.pc.sel.IC']] <- confint(common.models[[station]][['MHQ.pc.sel']])
+  #data.common.models[[station]][['MHQ.pc.sel.IC']] <- confint(common.models[[station]][['MHQ.pc.sel']])
 }
 
 qsave(data.common.models, 'data.common.models.qs')
+data.common.models <- qread('data.common.models.qs')
+
+plots.CI <- function(data, df.comp, model.type, 
+                     metric.submodel, stations, 
+                     filter = FALSE, quantity = FALSE){
+  if (quantity == FALSE){
+    if(filter == TRUE){
+      out <- which.max(df.comp[[model.type]][[metric.submodel]])
+      
+      stations.names <- stations$STAID
+      
+      aux <- stations.names[-out]
+      df <- data.frame(
+        station = factor(aux, levels = aux),
+        Z = stations[which(stations$STAID %in% aux), 'Z']
+      )
+      
+      df$station <- factor(df$station, levels = df$station[order(df$Z)])
+    }else{
+      stations.names <- stations$STAID
+      
+      aux <- stations.names
+      df <- data.frame(
+        station = factor(aux, levels = aux),
+        Z = stations[which(stations$STAID %in% aux), 'Z']
+      )
+      
+      df$station <- factor(df$station, levels = df$station[order(df$Z)])
+    }
+    
+    #number of vars
+    L <- length(data[[aux[1]]][[paste0(model.type, '.pc.vars')]])
+    
+    for (j in 1:L){
+      for (i in 1:length(aux)){
+        station <- aux[i]
+        
+        vars <- names(data[[station]][[paste0(model.type, '.pc.vars')]])
+        var <- vars[j]
+        
+        df[i, 'value'] <- data[[station]][[paste0(model.type, '.pc.vars')]][var]
+        
+        df[i, c("low", "high")] <- data[[station]][[paste0(model.type, '.pc.IC')]][var, ]
+        
+      }
+      
+      #print(dim(df))
+      # cat(var, '\n')
+      max <- max(df[['low']])
+      min <- min(df[['high']])
+      # cat(min, '-', max, '\n')
+      #cat(sum(df[['low']] <= max) == nrow(df) & sum(df[['high']] >= min) == nrow(df), '\n')
+      
+      if (grepl('.lag', var) == T){
+        var.name <- gsub(aux[length(aux)], 'station', var)
+      }
+      else if (grepl('.day', var) == T){
+        var.name <- gsub(aux[length(aux)], 'station', var)
+      }
+      else{
+        var.name <- var
+      }
+      
+      g <- ggplot(df, aes(x = station, y = value))
+      
+      if (sum(df[['low']] <= max) == nrow(df) & sum(df[['high']] >= min) == nrow(df)){
+        g <- g + geom_rect(aes(xmin = -Inf, xmax = Inf, 
+                               ymin = min(c(min, max)) - 0.01, 
+                               ymax = max(c(min, max)) + 0.01),
+                       fill = "grey", alpha = 0.2)
+      }
+      
+      g <- g + 
+        geom_errorbar(aes(ymin = low, ymax = high), width = 0.5) +
+        geom_point(size = 2) +
+        geom_hline(yintercept = 0, linetype = 'dashed', color = 'red') +
+        # geom_hline(yintercept = min, linetype = 'dashed', color = 'blue') +
+        # geom_hline(yintercept = max, linetype = 'dashed', color = 'red') +
+        theme_minimal(base_size = 14) +
+        labs(
+          x = "Station",
+          y = "Estimated coefficient",
+          title = paste("CI of MDO coefficient:", var.name)
+        ) +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+      
+      
+      #sum(df[['low']] < max) == length(aux) & sum(df[['high']] > min) == length(aux)
+      print(g)
+    }
+  }
+  else{
+    if(filter == TRUE){
+      out <- which.max(df.comp[[model.type]][[metric.submodel]])
+      
+      stations.names <- stations$STAID
+      
+      aux <- stations.names[-out]
+      df <- data.frame(
+        station = factor(aux, levels = aux),
+        Z = stations[which(stations$STAID %in% aux), 'Z']
+      )
+      
+      df$station <- factor(df$station, levels = df$station[order(df$Z)])
+    }
+    else{
+      stations.names <- stations$STAID
+      
+      aux <- stations.names
+      df <- data.frame(
+        station = factor(aux, levels = aux),
+        Z = stations[which(stations$STAID %in% aux), 'Z']
+      )
+      
+      df$station <- factor(df$station, levels = df$station[order(df$Z)])
+    }
+    
+    #number of mu vars
+    L <- length(data[[aux[1]]][[paste0(model.type, '.pc.mu.vars')]])
+    
+    for (j in 1:L){
+      for (i in 1:length(aux)){
+        station <- aux[i]
+        
+        vars <- names(data[[station]][[paste0(model.type, '.pc.mu.vars')]])
+        var <- vars[j]
+        
+        df[i, 'value'] <- data[[station]][[paste0(model.type, '.pc.mu.vars')]][var]
+        
+        df[i, c("low", "high")] <- data[[station]][[paste0(model.type, '.pc.IC')]][paste0('mu.', var), ]
+        
+        
+      }
+      
+      max <- max(df[['low']])
+      min <- min(df[['high']])
+      
+      if (grepl('.lag', var) == T){
+        var.name <- gsub(aux[length(aux)], 'station', var)
+      }
+      else if (grepl('.day', var) == T){
+        var.name <- gsub(aux[length(aux)], 'station', var)
+      }
+      else{
+        var.name <- var
+      }
+      
+      g <- ggplot(df, aes(x = station, y = value))
+      
+      if (sum(df[['low']] <= max) == nrow(df) & sum(df[['high']] >= min) == nrow(df)){
+        g <- g + geom_rect(aes(xmin = -Inf, xmax = Inf, 
+                               ymin = min(c(min, max)) - 0.01, 
+                               ymax = max(c(min, max)) + 0.01),
+                           fill = "grey", alpha = 0.2)
+      }
+      
+      g <- g +
+        geom_errorbar(aes(ymin = low, ymax = high), width = 0.5) +
+        geom_point(size = 2) +
+        geom_hline(yintercept = 0, linetype = 'dashed', color = 'red') +
+        theme_minimal(base_size = 14) +
+        labs(
+          x = "Station",
+          y = "Estimated coefficient",
+          title = paste("CI of", model.type, "mu.coefficient:", var.name)
+        ) +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+      
+      print(g)
+    }
+    
+    #length of sigma vars
+    L <- length(data[[aux[1]]][[paste0(model.type, '.pc.sigma.vars')]])
+    
+    for (j in 1:L){
+      for (i in 1:length(aux)){
+        station <- aux[i]
+        
+        vars <- names(data[[station]][[paste0(model.type, '.pc.sigma.vars')]])
+        var <- vars[j]
+        
+        df[i, 'value'] <- data[[station]][[paste0(model.type, '.pc.sigma.vars')]][var]
+        
+        df[i, c("low", "high")] <- data[[station]][[paste0(model.type, '.pc.IC')]][paste0('sigma.', var), ]
+        
+      }
+      
+      max <- max(df[['low']])
+      min <- min(df[['high']])
+      
+      if (grepl('.lag', var) == T){
+        var.name <- gsub(aux[length(aux)], 'station', var)
+      }
+      else if (grepl('.day', var) == T){
+        var.name <- gsub(aux[length(aux)], 'station', var)
+      }
+      else{
+        var.name <- var
+      }
+      
+      g <- ggplot(df, aes(x = station, y = value))
+      
+      if (sum(df[['low']] <= max) == nrow(df) & sum(df[['high']] >= min) == nrow(df)){
+        g <- g + geom_rect(aes(xmin = -Inf, xmax = Inf, 
+                               ymin = min(c(min, max)) - 0.01, 
+                               ymax = max(c(min, max)) + 0.01),
+                           fill = "grey", alpha = 0.2)
+      }
+      
+      g <- g +
+        geom_errorbar(aes(ymin = low, ymax = high), width = 0.5) +
+        geom_point(size = 2) +
+        geom_hline(yintercept = 0, linetype = 'dashed', color = 'red') +
+        theme_minimal(base_size = 14) +
+        labs(
+          x = "Station",
+          y = "Estimated coefficient",
+          title = paste("CI of", model.type, "sigma.coefficient:", var.name)
+        ) +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+      
+      print(g)
+    }
+  }
+  
+}
+
+plots.CI(data.common.models, df.comp, 'MDO', 'AIC.mod.common', stations, filter = T)
+plots.CI(data.common.models, df.comp, 'MHO', 'AIC.mod.common', stations, filter = T)
+plots.CI(data.common.models, df.comp, 'MHQ', 'AIC.mod.common', stations, quantity = T)
+plots.CI(data.common.models, df.comp, 'MDQ', 'AIC.mod.common', stations, quantity = T)
+
+#MDO
+# var1
+aux <- estaciones[-which(estaciones == 'R037')]
+df <- data.frame(
+  station = factor(aux, levels = aux),
+  Z = stations[which(stations$STAID %in% aux), 'Z']
+)
+
+df$station <- factor(df$station, levels = df$station[order(df$Z)])
+
+#quito la mala
+
+for (i in 1:length(aux)){
+  station <- aux[i]
+  
+  vars <- names(data.common.models[[station]][['MDO.pc.vars']])
+  var <- vars[19]
+  
+  df[i, 'value'] <- data.common.models[[station]][['MDO.pc.vars']][var]
+  
+  df[i, c("low", "high")] <- data.common.models[[station]][['MDO.pc.IC']][var, ]
+  
+}
+
+ggplot(df, aes(x = station, y = value)) +
+  geom_errorbar(aes(ymin = low, ymax = high), width = 0.5) +
+  geom_point(size = 2) +
+  geom_hline(yintercept = 0, linetype = 'dashed', color = 'red') +
+  theme_minimal(base_size = 14) +
+  labs(
+    x = "Estación",
+    y = "Coeficiente estimado",
+    title = paste("Intervalos de confianza del coeficiente MDO:", var)
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
