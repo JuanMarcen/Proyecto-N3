@@ -211,8 +211,9 @@ for(station in estaciones){
   cat('Estación ', station, '\n')
   # common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
   # common.models[[station]][['MHO.pc.2']] <- mod.comun(station, per.comun.h, MHO, 'M5', 1, type = 'log')
-  common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
+  # common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
   # common.models[[station]][['MDO.pc']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
+  common.models[[station]][['MDO.pc.2']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
   # common.models[[station]][['MHQ.pc']] <- mod.comun(station, per.comun.h, MHQ, 'M6', 15, type = 'gamma', subtype = 'hour')
   # common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
 }
@@ -247,19 +248,20 @@ vars.div.mho <- qread('vars.div.mho.qs')
 vars.div.mho.2 <- qread('vars.div.mho.2.qs')
 vars.div.mdo <- qread('vars.div.mdo.qs')
 
-station <- mdo.div.stations[1]
+station <- 'EM71' #P021 #R062
 station.p <- paste0(station, '.p')
-data.aux <- common.models[[station]][['MDO.pc']]$data
+data.aux <- common.models[[station]][['MHO.pc.3']]$data
 max(data.aux[[station.p]])
 summary(data.aux[[paste0(station.p, '.day')]])
 
-formula.aux <- common.models[[station]][['MDO.pc']]$formula
+formula.aux <- common.models[[station]][['MHO.pc.3']]$formula
 print(formula.aux)
 mod.aux <- glm(formula.aux, data = data.aux, family = binomial(link = 'logit'))
 mod.aux
-basura <- gam(formula = Y ~ s(R037.p.lag)  , data = data.aux, family = binomial)
+library(gam)
+basura <- gam(formula = Y ~ s(P021.p.lag) , data = data.aux, family = binomial)
 plot(basura)
-
+library(logistf)
 mod.aux.firth <- logistf(formula.aux, data.aux)
 mod.aux.firth
 -2 * mod.aux.firth$loglik['full'] + 2 * length(mod.aux.firth$coefficients)
