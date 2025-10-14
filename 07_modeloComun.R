@@ -49,7 +49,7 @@ plot.auc.n.vars <- function(mo, estaciones, data){
 }
 
 mo <- 'M9'
-df.mho <- plot.auc.n.vars('M9', estaciones, MHO)
+df.mho <- plot.auc.n.vars('M5', estaciones, MHO)
 # MHO escogido == 19 --> df.comp
 # MHO escogido == 1 --> df.comp.2
 df.mdo <- plot.auc.n.vars('M8', estaciones, MDO)
@@ -250,7 +250,7 @@ vars.div.mho <- qread('vars.div.mho.qs')
 vars.div.mho.2 <- qread('vars.div.mho.2.qs')
 vars.div.mdo <- qread('vars.div.mdo.qs')
 
-station <- 'P021' #P021 #R062
+station <- 'P023' #P021 #R062
 station.p <- paste0(station, '.p')
 data.aux <- common.models[[station]][['MHO.pc.3']]$data
 max(data.aux[[station.p]])
@@ -276,6 +276,7 @@ mod.aux.firth
 
 aux <- data.frame(dfbetas(mod.aux))
 thresh <- 2 / sqrt(nrow(data.aux))
+par(mfrow = c(1,3))
 plot(aux$poly.P021.p.lag..2.2)
 abline(h = thresh, col = 'red')
 abline(h = -thresh, col = 'red')
@@ -284,8 +285,18 @@ abline(h = -thresh, col = 'red')
 data.aux[which.max(aux$poly.P021.p.lag..2.2), paste0(station.p, '.lag')]
 
 
-update(mod.aux, formula = .~. -poly(P021.p.lag, 2) + I(P021.p.lag < 3):I(P021.p.lag) +  I(P021.p.lag >= 3):I(P021.p.lag))
+#----Threshold of MHO models----
+thresholds <- seq(0.5, 5, by = 0.5)
+aic <- c()
+for(i in 1:length(thresholds)){
+  aux <- update(mod.aux, formula = .~. -poly(P023.p.lag, 2) + 
+                  I(P023.p.lag < thresholds[i]):I(P023.p.lag) + 
+                  I(P023.p.lag >= thresholds[i]):I(P023.p.lag))
+  aic <- c(aic, aux$aic)
+}
 
+names(aic) <- thresholds
+aic
 #----ajuste de modelos por selección AIC en el periodo común----
 # recuperar funciones de selección
 # selección ocurrencia
