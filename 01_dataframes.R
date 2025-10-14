@@ -108,4 +108,58 @@ save(estaciones, df_minutes, df_hours, df_days,
      file = 'data.RData')
 
 
+# dias de 8 am a 7.45 (7) al día siguiente
+library(dplyr)
+
+df_days_2<- df_hours %>%
+  mutate(
+    # Ajustar el día según la hora
+    l_meteo = ifelse(h < 8, l - 1, l),
+    # Si pasamos del día 0 al anterior año
+    t_meteo = ifelse(l_meteo == 0, t - 1, t),
+    l_meteo = ifelse(l_meteo == 0, 365, l_meteo)  # suponiendo año no bisiesto
+  ) %>%
+  relocate(t_meteo, l_meteo, .after = h)
+
+cols_id <- c('t_meteo', 'l_meteo')
+cols_val <- paste0(estaciones, '.p')
+df_days_2 <- df_days_2 %>%
+  group_by(across(all_of(cols_id))) %>%
+  summarise(
+    across(
+      all_of(cols_val), 
+      ~ if(mean(is.na(.x)) >= 0.25) NA_real_ else sum(.x, na.rm = TRUE)
+    ),
+    .groups = 'drop'
+  ) %>%
+  as.data.frame()
+
+
+
+#add t_meteo and l_meteo to all dataframes
+df_hours <- df_hours %>%
+  mutate(
+    # Ajustar el día según la hora
+    l_meteo = ifelse(h < 8, l - 1, l),
+    # Si pasamos del día 0 al anterior año
+    t_meteo = ifelse(l_meteo == 0, t - 1, t),
+    l_meteo = ifelse(l_meteo == 0, 365, l_meteo)  # suponiendo año no bisiesto
+  ) %>%
+  relocate(t_meteo, l_meteo, .before = t)
+
+df_minutes <- df_minutes %>%
+  mutate(
+    # Ajustar el día según la hora
+    l_meteo = ifelse(h < 8, l - 1, l),
+    # Si pasamos del día 0 al anterior año
+    t_meteo = ifelse(l_meteo == 0, t - 1, t),
+    l_meteo = ifelse(l_meteo == 0, 365, l_meteo)  # suponiendo año no bisiesto
+  ) %>%
+  relocate(t_meteo, l_meteo, .before = t)
+
+save(estaciones, df_minutes, df_hours, df_days, df_days_2,
+     file = 'data.RData')
+  
+
+
 

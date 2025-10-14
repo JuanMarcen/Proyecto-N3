@@ -209,14 +209,14 @@ mod.comun <- function(station, per.comun, data, mod, chosen,
 common.models <- list()
 for(station in estaciones){
   cat('Estación ', station, '\n')
-  # common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
-  # common.models[[station]][['MHO.pc.2']] <- mod.comun(station, per.comun.h, MHO, 'M5', 1, type = 'log')
-  # common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
-  # common.models[[station]][['MDO.pc']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
-  # common.models[[station]][['MDO.pc.2']] <- mod.comun(station, per.comun.day, MDO, 'M7', 11, type = 'log')
+  common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
+  common.models[[station]][['MHO.pc.2']] <- mod.comun(station, per.comun.h, MHO, 'M5', 1, type = 'log')
+  common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
+  common.models[[station]][['MDO.pc']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
+  common.models[[station]][['MDO.pc.2']] <- mod.comun(station, per.comun.day, MDO, 'M7', 11, type = 'log')
   common.models[[station]][['MDO.pc.3']] <- mod.comun(station, per.comun.day, MDO, 'M8', 11, type = 'log')
-  # common.models[[station]][['MHQ.pc']] <- mod.comun(station, per.comun.h, MHQ, 'M6', 15, type = 'gamma', subtype = 'hour')
-  # common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
+  common.models[[station]][['MHQ.pc']] <- mod.comun(station, per.comun.h, MHQ, 'M6', 15, type = 'gamma', subtype = 'hour')
+  common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
 }
 
 # DIVERGENT STATIONS
@@ -250,7 +250,7 @@ vars.div.mho <- qread('vars.div.mho.qs')
 vars.div.mho.2 <- qread('vars.div.mho.2.qs')
 vars.div.mdo <- qread('vars.div.mdo.qs')
 
-station <- 'EM71' #P021 #R062
+station <- 'P021' #P021 #R062
 station.p <- paste0(station, '.p')
 data.aux <- common.models[[station]][['MHO.pc.3']]$data
 max(data.aux[[station.p]])
@@ -262,7 +262,9 @@ mod.aux <- glm(formula.aux, data = data.aux, family = binomial(link = 'logit'))
 mod.aux
 library(gam)
 basura <- gam(formula = Y ~ s(P021.p.lag) , data = data.aux, family = binomial)
-plot(basura)
+basura1 <- plot(basura$data$P021.p.lag, basura$fitted.values, xlim = c(0,7))
+
+
 library(logistf)
 mod.aux.firth <- logistf(formula.aux, data.aux)
 mod.aux.firth
@@ -271,12 +273,18 @@ mod.aux.firth
 #   paste('.~. - ', paste0('poly(', station, '.p.lag, 3)'), '+', paste0(station, '.p.lag'),
 #         '-', paste0('poly(', station, '.p.day, 3)'), '+', paste0(station, '.p.day'))
 # ))
-mod.aux.2 <- step(mod.aux)
 
-no.vars <- setdiff(labels(terms(mod.aux$formula)), labels(terms(mod.aux.2$formula)))
+aux <- data.frame(dfbetas(mod.aux))
+thresh <- 2 / sqrt(nrow(data.aux))
+plot(aux$poly.P021.p.lag..2.2)
+abline(h = thresh, col = 'red')
+abline(h = -thresh, col = 'red')
 
 
-#looks like the lags give the problem so quit the pooly and add the normal in everyone?
+data.aux[which.max(aux$poly.P021.p.lag..2.2), paste0(station.p, '.lag')]
+
+
+update(mod.aux, formula = .~. -poly(P021.p.lag, 2) + I(P021.p.lag < 3):I(P021.p.lag) +  I(P021.p.lag >= 3):I(P021.p.lag))
 
 #----ajuste de modelos por selección AIC en el periodo común----
 # recuperar funciones de selección
@@ -768,7 +776,7 @@ heat.map <- function(df, n.metrics = 1, title){
 }
 
 heat.map(df.comp$MHO, n.metrics = 2, title = 'MHO')
-heat.map(df.comp$MDO, n.metrics = 2, title = 'MDO')
+heat.map(df.comp$MDO[-which.max(df.comp$MDO$AIC.mod.common), ], n.metrics = 2, title = 'MDO')
 heat.map(df.comp$MHQ, n.metrics = 1, title = 'MHQ')
 heat.map(df.comp$MDQ, n.metrics = 1, title = 'MDQ')
 
