@@ -250,20 +250,20 @@ vars.div.mho <- qread('vars.div.mho.qs')
 vars.div.mho.2 <- qread('vars.div.mho.2.qs')
 vars.div.mdo <- qread('vars.div.mdo.qs')
 
-station <- 'P023' #P021 #R062
+station <- 'R037' #P021 #R062
 station.p <- paste0(station, '.p')
-data.aux <- common.models[[station]][['MHO.pc.3']]$data
+data.aux <- common.models[[station]][['MDO.pc']]$data
 max(data.aux[[station.p]])
 summary(data.aux[[paste0(station.p, '.day')]])
 
-formula.aux <- common.models[[station]][['MHO.pc.3']]$formula
+formula.aux <- common.models[[station]][['MDO.pc']]$formula
 print(formula.aux)
 mod.aux <- glm(formula.aux, data = data.aux, family = binomial(link = 'logit'))
 mod.aux
 library(gam)
-basura <- gam(formula = Y ~ s(P021.p.lag) , data = data.aux, family = binomial)
-basura1 <- plot(basura$data$P021.p.lag, basura$fitted.values, xlim = c(0,7))
-
+basura <- gam(formula = Y ~ s(R037.p.lag) , data = data.aux, family = binomial)
+basura1 <- plot(basura$data$R037.p.lag, basura$fitted.values)
+plot(basura)
 
 library(logistf)
 mod.aux.firth <- logistf(formula.aux, data.aux)
@@ -276,27 +276,24 @@ mod.aux.firth
 
 aux <- data.frame(dfbetas(mod.aux))
 thresh <- 2 / sqrt(nrow(data.aux))
-par(mfrow = c(1,3))
-plot(aux$poly.P021.p.lag..2.2)
+par(mfrow = c(1,4))
+plot(aux$poly.R037.p.lag..3.3)
 abline(h = thresh, col = 'red')
 abline(h = -thresh, col = 'red')
 
+data.aux[which.min(aux$poly.R037.p.lag..3.1), paste0(station.p, '.lag')]
 
-data.aux[which.max(aux$poly.P021.p.lag..2.2), paste0(station.p, '.lag')]
-
-
-#----Threshold of MHO models----
-thresholds <- seq(0.5, 5, by = 0.5)
-aic <- c()
-for(i in 1:length(thresholds)){
-  aux <- update(mod.aux, formula = .~. -poly(P023.p.lag, 2) + 
-                  I(P023.p.lag < thresholds[i]):I(P023.p.lag) + 
-                  I(P023.p.lag >= thresholds[i]):I(P023.p.lag))
-  aic <- c(aic, aux$aic)
+#effects in each station
+for(station in estaciones){
+  station.p <- paste0(station, '.p')
+  data.aux <- common.models[[station]][['MDO.pc']]$data
+  formula.aux <- common.models[[station]][['MDO.pc']]$formula
+  mod.aux <- glm(formula.aux, data = data.aux, family = binomial(link = 'logit'))
+  basura <- gam(formula = as.formula(paste0('Y ~ s(', station.p, '.lag)')) , data = data.aux, family = binomial)
+  basura1 <- plot(basura$data[[paste0(station.p, '.lag')]], basura$fitted.values)
 }
 
-names(aic) <- thresholds
-aic
+
 #----ajuste de modelos por selección AIC en el periodo común----
 # recuperar funciones de selección
 # selección ocurrencia
@@ -584,6 +581,8 @@ for (station in estaciones){
 # common.models <- qread('common.models.qs')
 
 
+
+
 #----comparacion modelos----
 library(pROC)
 library(ggplot2)
@@ -694,22 +693,20 @@ library(dplyr)
 library(ggnewscale)
 
 heat.map <- function(df, n.metrics = 1, title){
+  scale_row_values <- function(values){
+    rng <- range(values, na.rm = TRUE)
+    if (diff(rng) == 0) return(rep(0.5, length(values))) # valor medio si todo igual
+    scales::rescale(values, from = rng)
+  }
   if (n.metrics == 2){
     df_long <- df %>%
       pivot_longer(cols = -station, names_to = "variable", values_to = "value") %>%
-      mutate(Tipo = ifelse(grepl("AUC", variable), "AUC", "AIC"))
-    
-    # Añadir columna con AIC.mod.pc por estación
-    df_long <- df_long %>%
-      left_join(
-        df %>% select(station, AIC.mod.sel),
-        by = "station"
-      ) %>%
-      mutate(
-        value_rel = ifelse(Tipo == "AIC", value / AIC.mod.sel, value)  # AIC relativo si es tipo AIC
-      )
-    
-    df_long <- df_long %>%
+      mutate(Tipo = ifelse(grepl("AUC", variable), "AUC", "AIC")) %>%
+      left_join(df %>% select(station, AIC.mod.sel), by = "station") %>%
+      mutate(value_rel = ifelse(Tipo == "AIC", value / AIC.mod.sel, value)) %>%
+      group_by(station, Tipo) %>%
+      mutate(value_row_rel = scale_row_values(value_rel)) %>%
+      ungroup() %>%
       mutate(
         station = factor(station, levels = unique(station)),
         variable = factor(variable, levels = unique(variable))
@@ -730,13 +727,13 @@ heat.map <- function(df, n.metrics = 1, title){
       
       # AIC
       geom_tile(data = df_long %>% filter(Tipo == "AIC"),
-                aes(x = variable, y = station, fill = value_rel), color = "white") +
+                aes(x = variable, y = station, fill = value_row_rel), color = "white") +
       geom_text(data = df_long %>% filter(Tipo == 'AIC'),
                 aes(x = variable, y = station, label = round(value_rel, 4))) +
       scale_fill_gradientn(
         colors = c("#277DF5", "white", "red"),
-        name = "Row relative \n AIC",
-        breaks = c(min(df_long[which(df_long$Tipo == 'AIC'), 'value_rel']), 0.5, max(df_long[which(df_long$Tipo == 'AIC'), 'value_rel'])),
+        name = "Row relative\nAIC",
+        breaks = c(0, 0.5, 1),
         labels = c("min", "", "max")
       ) +
       
@@ -746,37 +743,26 @@ heat.map <- function(df, n.metrics = 1, title){
   }
   else if (n.metrics == 1){
     df_long <- df %>%
-      pivot_longer(cols = -station, names_to = "variable", values_to = "value")
-    
-    # Añadir columna con AIC.mod.pc por estación
-    df_long <- df_long %>%
-      left_join(
-        df %>% select(station, AIC.mod.sel),
-        by = "station"
-      ) %>%
-      mutate(
-        value_rel = value / AIC.mod.sel, value  # AIC relativo si es tipo AIC
-      )
-    
-    df_long <- df_long %>%
+      pivot_longer(cols = -station, names_to = "variable", values_to = "value") %>%
+      left_join(df %>% select(station, AIC.mod.sel), by = "station") %>%
+      mutate(value_rel = value / AIC.mod.sel) %>%
+      group_by(station) %>%
+      mutate(value_row_rel = scale_row_values(value_rel)) %>%
+      ungroup() %>%
       mutate(
         station = factor(station, levels = unique(station)),
         variable = factor(variable, levels = unique(variable))
       )
     
-    ggplot() +
-      # AIC
-      geom_tile(data = df_long,
-                aes(x = variable, y = station, fill = value_rel), color = "white") +
-      geom_text(data = df_long,
-                aes(x = variable, y = station, label = round(value_rel, 4))) +
+    ggplot(df_long, aes(x = variable, y = station, fill = value_row_rel)) +
+      geom_tile(color = "white") +
+      geom_text(aes(label = round(value_rel, 4))) +
       scale_fill_gradientn(
         colors = c("#277DF5", "white", "red"),
-        name = "Row relative \n AIC",
-        breaks = c(min(df_long[, 'value_rel']), 0.5, max(df_long[, 'value_rel'])),
+        name = "Row relative\nAIC",
+        breaks = c(0, 0.5, 1),
         labels = c("min", "", "max")
       ) +
-      
       theme_minimal(base_size = 14) +
       theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
       ggtitle(label = title)
@@ -787,14 +773,137 @@ heat.map <- function(df, n.metrics = 1, title){
 }
 
 heat.map(df.comp$MHO, n.metrics = 2, title = 'MHO')
-heat.map(df.comp$MDO[-which.max(df.comp$MDO$AIC.mod.common), ], n.metrics = 2, title = 'MDO')
+heat.map(df.comp$MDO, n.metrics = 2, title = 'MDO')
 heat.map(df.comp$MHQ, n.metrics = 1, title = 'MHQ')
 heat.map(df.comp$MDQ, n.metrics = 1, title = 'MDQ')
 
 # model MHO not really good for any of the 2 chosen ones
 # the rest dont look bad
 
+#----Threshold of MHO models (heat maps of AIC and compare to selected one)----
+df.thresh <- function(stations, common.models, model.type, 
+                      thresholds){
+  df <- data.frame(matrix(NA, ncol = length(thresholds) * 2 + 1, nrow = length(estaciones)))
+  colnames(df) <- c('station', paste0('AIC.', thresholds), paste0('AUC.', thresholds))
+  df[, 'station'] <- stations
+  
+  for (j in 1:length(stations)){
+    station <- stations[j]
+    cat('Station: ', station, '\n')
+    station.p <- paste0(station, '.p')
+    data.aux <- common.models[[station]][[model.type]]$data
+    formula.aux <- common.models[[station]][[model.type]]$formula
+    mod.aux <- glm(formula.aux, data = data.aux, family = binomial(link = 'logit'))
+    
+    row.aic <- c()
+    row.auc <- c()
+    for(i in 1:length(thresholds)){
+      #AIC
+      aux <- update(mod.aux, formula = as.formula(paste0('.~. -poly(', station.p, '.lag, 2) + 
+                  I(', station.p, '.lag <', thresholds[i], '):I(log(pmax(', station.p, '.lag, 1e-6))) + 
+                  I(', station.p, '.lag >=',  thresholds[i], '):I(', station.p, '.lag)')))
+      row.aic <- c(row.aic, aux$aic)
+      
+      #AUC
+      roc <- suppressMessages(
+        roc(data.aux$Y, predict(aux, type = 'response'))
+      )
+      row.auc <- c(row.auc, auc(roc))
+    }
+    
+    df[j, paste0('AIC.', thresholds)] <- row.aic
+    df[j, paste0('AUC.', thresholds)] <- row.auc
+    
+  }
+  
+  return(df)
+}
 
+df.thresh.MHO.pc.3 <- df.thresh(estaciones, common.models, 'MHO.pc.3', 
+                                seq(0.5, 5, by = 0.5))
+df.thresh.MHO.pc.3.log <- df.thresh(estaciones, common.models, 'MHO.pc.3', 
+                                seq(0.5, 5, by = 0.5))
+
+df.thresh.MDO.pc.log <- df.thresh(estaciones, common.models, 'MDO.pc', 
+                                    seq(0.5, 5, by = 0.5))
+
+df.thresh.MHO.pc.3$AIC.mod.sel <- df.comp$MHO$AIC.mod.sel
+df.thresh.MHO.pc.3$AUC.mod.sel <- df.comp$MHO$AUC.mod.sel
+df.thresh.MHO.pc.3.log$AIC.mod.sel <- df.comp$MHO$AIC.mod.sel
+df.thresh.MHO.pc.3.log$AUC.mod.sel <- df.comp$MHO$AUC.mod.sel
+
+heat.map(df.thresh.MHO.pc.3, n.metrics = 2, 'MHO thresholds intervals')
+heat.map(df.thresh.MHO.pc.3.log, n.metrics = 2, 'MHO thresholds intervals')
+
+#comparison of AIC and AUC
+mapa_calor <- function(df, tipo = c("AUC", "AIC")) {
+  tipo <- match.arg(tipo)  # Forzar que sea uno de los dos
+  
+  # Pasar a formato largo
+  df_long <- melt(df, id.vars = "station")
+  
+  if (tipo == "AUC") {
+    # Escalado global entre 0.5 y 1
+    ggplot(df_long, aes(x = variable, y = station, fill = value)) +
+      geom_tile(color = "white") +
+      geom_text(aes(label = round(value, 3)), size = 5) +
+      scale_fill_gradientn(
+        colors = c("blue", "lightblue", "orange", "red"),
+        limits = c(min(df[, -1]),max(df[, -1])),
+        name = "AUC"
+      ) +
+      theme_minimal() +
+      theme(
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank()
+      )
+    
+  } else if (tipo == "AIC") {
+    # 1️⃣ Relativizar cada fila con respecto a la primera columna
+    df_rel <- df
+    
+    df_long <- melt(df_rel, id.vars = "station")
+    
+    # 2️⃣ Calcular valores normalizados por fila solo para la escala de color
+    df_long <- df_long %>%
+      group_by(station) %>%
+      mutate(color_val = (value - min(value)) / (max(value) - min(value))) %>%
+      ungroup()
+    
+    # 3️⃣ Graficar usando color_val para el gradiente y value para el texto
+    ggplot(df_long, aes(x = variable, y = station, fill = color_val)) +
+      geom_tile(color = "white") +
+      geom_text(aes(label = round(value, 1)), size = 5) +
+      scale_fill_gradientn(
+        colors = c("#277DF5", "white", "red"),
+        name = "Row relative\nAIC",
+        breaks = c(0, 0.5, 1),
+        labels = c("min", "", "max")
+      ) +
+      theme_minimal() +
+      theme(
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank()
+      )
+  }
+}
+
+thresholds <- seq(0.5, 5, by = 0.5)
+AIC.df <- cbind(df.thresh.MHO.pc.3$station,
+                df.thresh.MHO.pc.3[, head(grep('AIC', colnames(df.thresh.MHO.pc.3)), -1)],
+                df.thresh.MHO.pc.3.log[, head(grep('AIC', colnames(df.thresh.MHO.pc.3.log)), -1)])
+colnames(AIC.df) <- c('station', paste0('AIC.lin.', thresholds), paste0('AIC.log.', thresholds))
+mapa_calor(AIC.df, 'AIC')
+mapa_calor(AIC.df[, c('station', paste0('AIC.log.', thresholds))], 'AIC')
+
+AUC.df <- cbind(df.thresh.MHO.pc.3$station,
+                df.thresh.MHO.pc.3[, head(grep('AUC', colnames(df.thresh.MHO.pc.3)), -1)],
+                df.thresh.MHO.pc.3.log[, head(grep('AUC', colnames(df.thresh.MHO.pc.3.log)), -1)])
+colnames(AUC.df) <- c('station', paste0('AUC.lin.', thresholds), paste0('AUC.log.', thresholds))
+mapa_calor(AUC.df, 'AUC')
+mapa_calor(AUC.df[, c('station', paste0('AUC.log.', thresholds))], 'AUC')
 
 #----analisis de comunalidades----
 # analyisis of CI of coefficients of models (ONLY COMMON MODELS)
