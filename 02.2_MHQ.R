@@ -354,9 +354,78 @@ for (station in estaciones){
 rm('M7_list')
 saveRDS(MHQ, 'MHQ.rds')
 
+
+# M8: new transformations 
+for (station in rev(estaciones)){
+  X <- MHQ[[station]]$X
+  #variable lag
+  # mod.lag <- gam(formula = as.formula(paste0(paste0(station, '.p'), '~ s(', station, '.p.lag)')), 
+  #                data = X, family = Gamma(link ='log'))
+  # plot(mod.lag, main = paste(station))
+  #variable del dia
+  mod.day <- gam(formula = as.formula(paste0(paste0(station, '.p'), '~ s(', station, '.p.day)')),
+                 data = X, family = Gamma(link = 'log'))
+  plot(mod.day, main = paste(station))
+}
+
+# 0 == log
+degrees.p.lag <- c(3, 2, 0, 3, 2, 2, 0, 0, 0, 2, 0, 0, 2, 0, 0, 2,
+                   2, 3, 0, 0, 0, 0, 0, 2, 0, 3, 0, 2)
+names(degrees.p.lag) <- estaciones
+degrees.p.day <- c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+                   0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1)
+names(degrees.p.day) <- estaciones
+
+M8_list <- list()
+for (station in estaciones){
+  cat('Estación ',station, '\n')
+  
+  station.p <- paste0(station, '.p')
+  
+  deg.lag <- degrees.p.lag[station]
+  deg.day <- degrees.p.day[station]
+  
+  vars <- c()
+  if (deg.lag == 0){
+    vars <- c(vars, paste0('I(log(pmax(', station.p, '.lag, 1e-6)))' ))
+  }else{
+    vars <- c(vars, paste0('poly(', station, '.p.lag, ',deg.lag, ')'))
+  }
+  
+  if (deg.day == 0){
+    vars <- c(vars, paste0('I(log(pmax(', station.p, '.day, 1e-6)))' ))
+  }else{
+    vars <- c(vars, paste0('poly(', station, '.p.day, ',deg.day, ')'))
+  }
+  
+  vars <- c(vars, paste0(station,'.p.lag:',station,'.p.day'))
+  
+  mod_null <- gamlss(as.formula(paste(paste0(station, '.p'), '~ 1')), 
+                     sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)) + 
+                       I(sin(2*pi*h/24)) + I(cos(2*pi*h/24)), 
+                     family = GA, 
+                     data = MHQ[[station]]$X,
+                     trace = F)
+  
+  M8_list[[station]] <- step_glm(mod_null, 
+                                 data = MHQ[[station]]$X, 
+                                 vars = vars, 
+                                 harmonics.l = harmonics.l,
+                                 harmonics.h = harmonics.h)
+  
+  
+}
+
+for (station in estaciones){
+  MHQ[[station]][['M8']] <- M8_list[[station]]
+  MHQ[[station]][['vars.M8']] <- M8_list[[station]]$mu.coefficients
+}
+rm('M8_list')
+qsave(MHQ, 'MHQ.qs')
+
 #----model comparison----
-AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 8))
-colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6','M7')
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
 for (station in estaciones){
@@ -367,10 +436,11 @@ for (station in estaciones){
   M5 <- MHQ[[station]]$M5
   M6 <- MHQ[[station]]$M6
   M7 <- MHQ[[station]]$M7
+  M8 <- MHQ[[station]]$M8
   X <- MHQ[[station]]$X
-  AIC.df[station, 2:8] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+  AIC.df[station, 2:9] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
                                   AIC(M4), AIC(M5), AIC(M6),
-                                  AIC(M7)), 2)
+                                  AIC(M7), AIC(M8)), 2)
   
 }
 

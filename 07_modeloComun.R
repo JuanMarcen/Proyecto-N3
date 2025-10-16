@@ -58,9 +58,9 @@ df.mdo <- plot.auc.n.vars('M8', estaciones, MDO)
 # MODELOS DE CANTIDAD
 n.vars.mdq <- c()
 n.vars.mhq <- c()
-mq <- 'M6'
+mq <- 'M8'
 for (station in estaciones){
-  n.vars.mdq <- c(n.vars.mdq, length(MDQ[[station]][[paste0('vars.', mq)]]) -1)
+  #n.vars.mdq <- c(n.vars.mdq, length(MDQ[[station]][[paste0('vars.', mq)]]) -1)
   n.vars.mhq <- c(n.vars.mhq, length(MHQ[[station]][[paste0('vars.', mq)]]) -1)
 }
 which.min(n.vars.mhq)
@@ -209,14 +209,17 @@ mod.comun <- function(station, per.comun, data, mod, chosen,
 common.models <- list()
 for(station in estaciones){
   cat('Estación ', station, '\n')
-  common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
-  common.models[[station]][['MHO.pc.2']] <- mod.comun(station, per.comun.h, MHO, 'M5', 1, type = 'log')
-  common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
-  common.models[[station]][['MDO.pc']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
-  common.models[[station]][['MDO.pc.2']] <- mod.comun(station, per.comun.day, MDO, 'M7', 11, type = 'log')
-  common.models[[station]][['MDO.pc.3']] <- mod.comun(station, per.comun.day, MDO, 'M8', 11, type = 'log')
-  common.models[[station]][['MHQ.pc']] <- mod.comun(station, per.comun.h, MHQ, 'M6', 15, type = 'gamma', subtype = 'hour')
-  common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
+  # common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
+  # common.models[[station]][['MHO.pc.2']] <- mod.comun(station, per.comun.h, MHO, 'M5', 1, type = 'log')
+  # common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
+  # common.models[[station]][['MDO.pc']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
+  # common.models[[station]][['MDO.pc.2']] <- mod.comun(station, per.comun.day, MDO, 'M7', 11, type = 'log')
+  # common.models[[station]][['MDO.pc.3']] <- mod.comun(station, per.comun.day, MDO, 'M8', 11, type = 'log')
+  # common.models[[station]][['MHQ.pc']] <- mod.comun(station, per.comun.h, MHQ, 'M6', 15, type = 'gamma', subtype = 'hour')
+  common.models[[station]][['MHQ.pc.2']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 6, type = 'gamma', subtype = 'hour')
+  common.models[[station]][['MHQ.pc.3']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 8, type = 'gamma', subtype = 'hour')
+  common.models[[station]][['MHQ.pc.4']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 11, type = 'gamma', subtype = 'hour')
+  #common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
 }
 
 # DIVERGENT STATIONS
@@ -284,12 +287,15 @@ abline(h = -thresh, col = 'red')
 data.aux[which.min(aux$poly.R037.p.lag..3.1), paste0(station.p, '.lag')]
 
 #effects in each station
+library(gam)
 for(station in estaciones){
   station.p <- paste0(station, '.p')
-  data.aux <- common.models[[station]][['MDO.pc']]$data
-  formula.aux <- common.models[[station]][['MDO.pc']]$formula
-  mod.aux <- glm(formula.aux, data = data.aux, family = binomial(link = 'logit'))
-  basura <- gam(formula = as.formula(paste0('Y ~ s(', station.p, '.lag)')) , data = data.aux, family = binomial)
+  X <- MDQ[[station]]$X
+  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = '%Y-%m-%d')
+  data.aux <- X %>% filter(date >= per.comun.day[1] & date <= per.comun.day[2])
+  
+  basura <- gam(formula = as.formula(paste0(station.p, ' ~ s(', station.p, '.lag)')) , 
+                data = as.data.frame(data.aux), family = Gamma(link = 'log'))
   basura1 <- plot(basura$data[[paste0(station.p, '.lag')]], basura$fitted.values)
 }
 
@@ -677,9 +683,11 @@ comp.models.2 <- function(estaciones, mod.type, models.list, period, common, AUC
   
 }
 
-df.MDO.2 <- comp.models.2(estaciones, MDO, common.models, per.comun.day, 'MDO.pc.2', AUC = T)
-df.comp$MDO <- cbind(df.comp$MDO, df.MDO.2[, -1])
-df.comp$MDO <- df.comp$MDO[, c(1,2,6,3,4,7,5)]
+df.MHQ.2 <- comp.models.2(estaciones, MHQ, common.models, per.comun.h, 'MHQ.pc.4', AUC = NULL)
+df.comp$MHQ <- cbind(df.comp$MHQ, df.MHQ.2[, -1])
+df.comp$MHQ <- df.comp$MHQ[, c(1,2,3,4,6,5)]
+colnames(df.comp$MHQ)[5] <- 'AIC.mod.common.4'
+
 df.MDO.3 <- comp.models.2(estaciones, MDO, common.models, per.comun.day, 'MDO.pc.3', AUC = T)
 df.comp$MDO <- cbind(df.comp$MDO, df.MDO.3[, -1])
 df.comp$MDO <- df.comp$MDO[, c(1,2,3,8,4,5,6,9,7)] 
@@ -781,6 +789,7 @@ heat.map(df.comp$MDQ, n.metrics = 1, title = 'MDQ')
 # the rest dont look bad
 
 #----Threshold of MHO models (heat maps of AIC and compare to selected one)----
+library(pROC)
 df.thresh <- function(stations, common.models, model.type, 
                       thresholds){
   df <- data.frame(matrix(NA, ncol = length(thresholds) * 2 + 1, nrow = length(estaciones)))
@@ -799,7 +808,7 @@ df.thresh <- function(stations, common.models, model.type,
     row.auc <- c()
     for(i in 1:length(thresholds)){
       #AIC
-      aux <- update(mod.aux, formula = as.formula(paste0('.~. -poly(', station.p, '.lag, 2) + 
+      aux <- update(mod.aux, formula = as.formula(paste0('.~. -poly(', station.p, '.lag, 3) + 
                   I(', station.p, '.lag <', thresholds[i], '):I(log(pmax(', station.p, '.lag, 1e-6))) + 
                   I(', station.p, '.lag >=',  thresholds[i], '):I(', station.p, '.lag)')))
       row.aic <- c(row.aic, aux$aic)
@@ -821,19 +830,28 @@ df.thresh <- function(stations, common.models, model.type,
 
 df.thresh.MHO.pc.3 <- df.thresh(estaciones, common.models, 'MHO.pc.3', 
                                 seq(0.5, 5, by = 0.5))
-df.thresh.MHO.pc.3.log <- df.thresh(estaciones, common.models, 'MHO.pc.3', 
-                                seq(0.5, 5, by = 0.5))
-
-df.thresh.MDO.pc.log <- df.thresh(estaciones, common.models, 'MDO.pc', 
-                                    seq(0.5, 5, by = 0.5))
-
 df.thresh.MHO.pc.3$AIC.mod.sel <- df.comp$MHO$AIC.mod.sel
 df.thresh.MHO.pc.3$AUC.mod.sel <- df.comp$MHO$AUC.mod.sel
+heat.map(df.thresh.MHO.pc.3, n.metrics = 2, 'MHO thresholds intervals')
+
+df.thresh.MHO.pc.3.log <- df.thresh(estaciones, common.models, 'MHO.pc.3', 
+                                seq(0.5, 5, by = 0.5))
 df.thresh.MHO.pc.3.log$AIC.mod.sel <- df.comp$MHO$AIC.mod.sel
 df.thresh.MHO.pc.3.log$AUC.mod.sel <- df.comp$MHO$AUC.mod.sel
-
-heat.map(df.thresh.MHO.pc.3, n.metrics = 2, 'MHO thresholds intervals')
 heat.map(df.thresh.MHO.pc.3.log, n.metrics = 2, 'MHO thresholds intervals')
+
+df.thresh.MDO.pc.log <- df.thresh(estaciones, common.models, 'MDO.pc', 
+                                    seq(7, 13, by = 1))
+df.thresh.MDO.pc.log$AIC.mod.common.2 <- df.comp$MDO$AIC.mod.common.2
+df.thresh.MDO.pc.log$AUC.mod.common.2 <- df.comp$MDO$AUC.mod.common.2
+df.thresh.MDO.pc.log$AIC.mod.common.2.1 <- df.comp$MDO$AIC.mod.common.2.1
+df.thresh.MDO.pc.log$AUC.mod.common.2.1 <- df.comp$MDO$AUC.mod.common.2.1
+df.thresh.MDO.pc.log$AIC.mod.sel <- df.comp$MDO$AIC.mod.sel
+df.thresh.MDO.pc.log$AUC.mod.sel <- df.comp$MDO$AUC.mod.sel
+heat.map(df.thresh.MDO.pc.log, n.metrics = 2, 'MDO thresholds intervals')
+
+
+
 
 #comparison of AIC and AUC
 mapa_calor <- function(df, tipo = c("AUC", "AIC")) {
@@ -904,6 +922,36 @@ AUC.df <- cbind(df.thresh.MHO.pc.3$station,
 colnames(AUC.df) <- c('station', paste0('AUC.lin.', thresholds), paste0('AUC.log.', thresholds))
 mapa_calor(AUC.df, 'AUC')
 mapa_calor(AUC.df[, c('station', paste0('AUC.log.', thresholds))], 'AUC')
+mapa_calor(df.thresh.MDO.pc.log[, c(1, head(grep('AIC', colnames(df.thresh.MDO.pc.log)), -1))], 'AIC')
+
+#----final common models----
+common.models.final <- list()
+for (station in estaciones){
+  cat('Station: ', station, '\n')
+  station.p <- paste0(station, '.p')
+  
+  #MHO
+  data.aux <- common.models[[station]][['MHO.pc.3']]$data
+  formula.aux <- common.models[[station]][['MHO.pc.3']]$formula
+  mod.aux <- glm(formula.aux, data = data.aux, family = binomial(link = 'logit'))
+  
+  common.models.final[[station]][['MHO']] <- update(mod.aux, 
+              formula = as.formula(paste0('.~. -poly(', station.p, '.lag, 2) + 
+              I(', station.p, '.lag <', 2, '):I(log(pmax(', station.p, '.lag, 1e-6))) + 
+              I(', station.p, '.lag >=',  2, '):I(', station.p, '.lag)')))
+  
+  #MDO
+  common.models.final[[station]][['MDO']] <- common.models[[station]][['MDO.pc.3']]
+  
+  #MHQ
+  common.models.final[[station]][['MHQ']] <- common.models[[station]][['MHQ.pc.2']]
+  
+  #MDQ
+  common.models.final[[station]][['MDQ']] <- common.models[[station]][['MDQ.pc']]
+ 
+  
+}
+
 
 #----analisis de comunalidades----
 # analyisis of CI of coefficients of models (ONLY COMMON MODELS)
