@@ -416,15 +416,33 @@ for (station in estaciones){
 # comparison with uniform (0,1)
 # example 1 station
 library(overlapping)
-unif.comp <- function(station, mes = NULL){
-  m <- MDQ[[station]]$M6
-  X <- MDQ[[station]]$X
-  p.obs <- X[[paste0(station, '.p')]]
+unif.comp <- function(station, mes = NULL,
+                      common.model = NULL, period = NULL,
+                      plot = FALSE){
   
-  if(!is.null(mes)){
-    ind <- which(X$mes %in% mes)
+  if(!is.null(common.model) & !is.null(period)){
+    m <- common.models.final[[station]][['MDQ']]
+    X <- MDQ[[station]]$X
+    X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = '%Y-%m-%d')
+    X <- X %>% filter(date >= period[1] & date <= period[2])
+    p.obs <- X[[paste0(station, '.p')]]
+    
+    if(!is.null(mes)){
+      ind <- which(X$mes %in% mes)
+    }else{
+      ind <- 1:dim(X)[1]
+    }
+    
   }else{
-    ind <- 1:dim(X)[1]
+    m <- MDQ[[station]]$M6
+    X <- MDQ[[station]]$X
+    p.obs <- X[[paste0(station, '.p')]]
+    
+    if(!is.null(mes)){
+      ind <- which(X$mes %in% mes)
+    }else{
+      ind <- 1:dim(X)[1]
+  }
   }
   # cat(length(ind), '\n')
   
@@ -449,11 +467,13 @@ unif.comp <- function(station, mes = NULL){
   theoretical <- (1:n) / (n + 1)  # usar (i)/(n+1) es común para evitar 0 y 1 exactos
   
   # QQ-plot
-  plot(theoretical, u_sorted, 
-       main = paste0(station, ' - Overlap: ', round(ov$OV,4)), 
-       xlab = "Cuantiles teóricos U(0,1)", 
-       ylab = "Cuantiles empíricos de u")
-  abline(0, 1, col = "red", lwd = 2)
+  if (plot == T){
+    plot(theoretical, u_sorted, 
+         main = paste0(station, ' - Overlap: ', round(ov$OV,4)), 
+         xlab = "Cuantiles teóricos U(0,1)", 
+         ylab = "Cuantiles empíricos de u")
+    abline(0, 1, col = "red", lwd = 2)
+  }
   
   return(ov$OV)
 }
@@ -469,17 +489,20 @@ load('Mapas/data_mapas.RData')
 #   ov_jja = ov_jja
 # )
 
-mapa_ov <- function(stations, mes = NULL){
+mapa_ov <- function(stations, mes = NULL,
+                    common.model = NULL, period = NULL){
   
   ov <- c()
   for (station in estaciones){
-    ov <- c(ov, unif.comp(station))
+    ov <- c(ov, unif.comp(station, mes = NULL,
+                          common.model = common.model, period = period))
   }
   
   if (!is.null(mes)){
     ov_mes <- c()
     for (station in estaciones){
-      ov_mes <- c(ov_mes, unif.comp(station, mes = c(6,7,8)))
+      ov_mes <- c(ov_mes, unif.comp(station, mes = mes,
+                                    common.model = common.model, period = period))
     }
     
     data <- data.frame(
@@ -572,17 +595,45 @@ mapa_ov <- function(stations, mes = NULL){
 
 
 mapa_ov(stations, mes = c(6,7,8))
+mapa_ov(stations, mes = c(6,7,8), common.model = T, period = per.comun.day)
 
+
+#comp extra mirar los overlaps 1 a 1 
+ov <- c()
+ov.2 <- c()
+for (station in estaciones){
+  ov <- c(ov, unif.comp(station, common.model = T, period = per.comun.day, mes =c (6,7,8)))
+  ov.2 <- c(ov.2, unif.comp(station, mes = c(6,7,8)))
+}
+
+plot(1:length(ov), ov, pch = 19, type = 'b')
+lines(1:length(ov.2), ov.2, pch = 19, type = 'b', col = 'red')
 # 100 simulaciones y mirar quantiles
-bp.q.sim <- function(station, n.sim = 100, mes = NULL){
-  m <- MDQ[[station]]$M6
-  X <- MDQ[[station]]$X
-  p.obs <- X[[paste0(station, '.p')]]
-  
-  if(!is.null(mes)){
-    ind <- which(X$mes %in% mes)
+bp.q.sim <- function(station, n.sim = 100, mes = NULL,
+                     common.model = NULL, period = NULL){
+  if(!is.null(common.model) & !is.null(period)){
+    m <- common.models.final[[station]][['MDQ']]
+    X <- MDQ[[station]]$X
+    X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = '%Y-%m-%d')
+    X <- X %>% filter(date >= period[1] & date <= period[2])
+    p.obs <- X[[paste0(station, '.p')]]
+    
+    if(!is.null(mes)){
+      ind <- which(X$mes %in% mes)
+    }else{
+      ind <- 1:dim(X)[1]
+    }
+    
   }else{
-    ind <- 1:dim(X)[1]
+    m <- MDQ[[station]]$M6
+    X <- MDQ[[station]]$X
+    p.obs <- X[[paste0(station, '.p')]]
+    
+    if(!is.null(mes)){
+      ind <- which(X$mes %in% mes)
+    }else{
+      ind <- 1:dim(X)[1]
+    }
   }
   
   mu <- m$mu.fv[ind]
@@ -621,8 +672,8 @@ bp.q.sim <- function(station, n.sim = 100, mes = NULL){
 
 par(mfrow = c(4,2))
 for (station in estaciones){
-  bp.q.sim(station)
-  bp.q.sim(station, mes = c(6, 7, 8))
+  bp.q.sim(station, common.model = T, period = per.comun.day)
+  bp.q.sim(station, mes = c(6, 7, 8), common.model = T, period = per.comun.day)
 }
 
 #----VALIDACIÓN----

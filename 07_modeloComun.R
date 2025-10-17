@@ -209,17 +209,17 @@ mod.comun <- function(station, per.comun, data, mod, chosen,
 common.models <- list()
 for(station in estaciones){
   cat('Estación ', station, '\n')
-  # common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
-  # common.models[[station]][['MHO.pc.2']] <- mod.comun(station, per.comun.h, MHO, 'M5', 1, type = 'log')
-  # common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
+  common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
+  common.models[[station]][['MHO.pc.2']] <- mod.comun(station, per.comun.h, MHO, 'M5', 1, type = 'log')
+  common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
   # common.models[[station]][['MDO.pc']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
   # common.models[[station]][['MDO.pc.2']] <- mod.comun(station, per.comun.day, MDO, 'M7', 11, type = 'log')
-  # common.models[[station]][['MDO.pc.3']] <- mod.comun(station, per.comun.day, MDO, 'M8', 11, type = 'log')
+  common.models[[station]][['MDO.pc.3']] <- mod.comun(station, per.comun.day, MDO, 'M8', 11, type = 'log')
   # common.models[[station]][['MHQ.pc']] <- mod.comun(station, per.comun.h, MHQ, 'M6', 15, type = 'gamma', subtype = 'hour')
   common.models[[station]][['MHQ.pc.2']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 6, type = 'gamma', subtype = 'hour')
-  common.models[[station]][['MHQ.pc.3']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 8, type = 'gamma', subtype = 'hour')
-  common.models[[station]][['MHQ.pc.4']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 11, type = 'gamma', subtype = 'hour')
-  #common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
+  # common.models[[station]][['MHQ.pc.3']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 8, type = 'gamma', subtype = 'hour')
+  # common.models[[station]][['MHQ.pc.4']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 11, type = 'gamma', subtype = 'hour')
+  common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
 }
 
 # DIVERGENT STATIONS

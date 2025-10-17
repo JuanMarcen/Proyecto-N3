@@ -1,12 +1,15 @@
 # COMPARISON OF MODELS USING DIFFERENT METRICS: SCC, RMSE, RB
-rm(list = ls())
-
+rm(list = setdiff(ls(), c('MHQ', 'MDQ', 'common.models.final',
+                          'per.comun.day', 'per.comun.h', 'estaciones')))
 # load data and functions
 load('data.RData')
 rm(list = setdiff(ls(), c('estaciones')))
 MDQ <- readRDS('MDQ.rds') # models and data for each model
 MHQ <- readRDS('MHQ.rds')
 source('methods.R')
+
+X.MHQ <- qread('X.MHQ.qs')
+X.MDQ <- qread('X.MDQ.qs')
 
 library(lubridate)
 library(dplyr)
@@ -16,11 +19,12 @@ ref.period <- as.Date(c('12/05/2011', '30/11/2023'), format = '%d/%m/%Y')
 
 
 # Anual mean precipitation in JJA
-value.obs.sim.station <- function(station, ref.period, data, model, 
+value.obs.sim.station <- function(station, data, ref.period, models.list, model, 
                                  type, quantile = NULL,
-                                 n.sim = 100, months = NULL){
+                                 n.sim = 100, months = NULL,
+                                 adjusted.ref.period = FALSE){
   # observed values
-  X <- data[[station]]$X
+  X <- data[[station]]
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = "%Y-%m-%d")
   x.obs <- X[, c('date', paste0(station, '.p'))]
   
@@ -82,7 +86,13 @@ value.obs.sim.station <- function(station, ref.period, data, model,
   
   x.obs.final <- mean(x.obs.final[[2]])
   #simulation values
-  mod <- data[[station]][[model]] #desired model
+  mod <- models.list[[station]][[model]] #desired model
+  
+  if (adjusted.ref.period == TRUE){
+    ind.ref <- 1:length(mod$sigma.fv)
+  }else{
+    ind.ref <- ind.ref
+  }
   
   vector.sim <- c()
   for (i in 1:n.sim){
@@ -144,9 +154,10 @@ value.obs.sim.station <- function(station, ref.period, data, model,
 }
 
 
-value.obs.sim.full <- function(estaciones, ref.period, data, model, 
+value.obs.sim.full <- function(estaciones, data, ref.period, models.list, model, 
                                type, quantile = NULL,
-                              n.sim = 100, months = NULL){
+                              n.sim = 100, months = NULL,
+                              adjusted.ref.period = FALSE){
   N <- length(estaciones)
   df <- data.frame(matrix(NA, ncol = n.sim + 2, nrow = length(estaciones)))
   colnames(df) <- c('station', 'x.obs', paste0('y.sim.', 1:n.sim))
@@ -157,13 +168,15 @@ value.obs.sim.full <- function(estaciones, ref.period, data, model,
   for (i in 1:length(estaciones)){
     #cat('Cálculo para la estación: ', estaciones[i], '\n')
     value.station <- value.obs.sim.station(estaciones[i],
-                                         ref.period = ref.period,
-                                         data = data,
-                                         model = model,
-                                         n.sim = n.sim,
-                                         months = months,
-                                         type = type, 
-                                         quantile = quantile)
+                                           data = data,
+                                           ref.period = ref.period,
+                                           models.list = models.list,
+                                           model = model,
+                                           n.sim = n.sim,
+                                           months = months,
+                                           type = type, 
+                                           quantile = quantile,
+                                           adjusted.ref.period = adjusted.ref.period)
     df[i, names.fill] <- value.station
   }
   
@@ -201,7 +214,7 @@ mean.metric('RB', df.amounts.M5)
 
 #MDQ
 day.amounts.M5 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M5', n.sim = 100, type = 'mean')
-day.amounts.M6 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M6', n.sim = 100, type = 'mean')
+day.amounts.M6 <- value.obs.sim.full(estaciones, X.MDQ, per.comun.day, MDQ, 'M6', n.sim = 100, type = 'mean')
 
 day.q0.90.M5 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M5', n.sim = 100, type = 'quantile', quantile = 0.90)
 day.q0.90.M6 <- value.obs.sim.full(estaciones, ref.period, MDQ, 'M6', n.sim = 100, type = 'quantile', quantile = 0.90)
@@ -275,3 +288,31 @@ df.hour.M5.M6 <- model.comp.df(estaciones[-4], ref.period, MHQ, 'M5', 'M6', n.si
 library(writexl)
 write_xlsx(df.day.M5.M6, "df.day.M5.M6.xlsx")
 write_xlsx(df.hour.M5.M6, "df.hour.M5.M6.xlsx")
+
+#results for common models
+hour.amount.common.MHQ <- value.obs.sim.full(estaciones, X.MHQ, per.comun.h,
+                                            common.models.final, 'MHQ', type = 'mean',
+                                            adjusted.ref.period = TRUE)
+hour.q0.90.common.MHQ <- value.obs.sim.full(estaciones, X.MHQ, per.comun.h,
+                                            common.models.final, 'MHQ', type = 'quantile', quantile = 0.90,
+                                            adjusted.ref.period = TRUE)
+hour.q0.95.common.MHQ <- value.obs.sim.full(estaciones, X.MHQ, per.comun.h,
+                                            common.models.final, 'MHQ', type = 'quantile', quantile = 0.95,
+                                            adjusted.ref.period = TRUE)
+hour.q0.99.common.MHQ <- value.obs.sim.full(estaciones, X.MHQ, per.comun.h,
+                                            common.models.final, 'MHQ', type = 'quantile', quantile = 0.99,
+                                            adjusted.ref.period = TRUE)
+hour.freq.common.MHQ <- value.obs.sim.full(estaciones, X.MHQ, per.comun.h,
+                                            common.models.final, 'MHQ', type = 'freq',
+                                            adjusted.ref.period = TRUE)
+hour.int.common.MHQ <- value.obs.sim.full(estaciones, X.MHQ, per.comun.h,
+                                          common.models.final, 'MHQ', type = 'intensity',
+                                          adjusted.ref.period = TRUE)
+
+
+round(mean.metric('SCC', hour.amount.common.MHQ), 5)
+round(mean.metric('RMSE', hour.amount.common.MHQ), 5)
+round(mean.metric('RB', hour.amount.common.MHQ), 5)
+
+
+

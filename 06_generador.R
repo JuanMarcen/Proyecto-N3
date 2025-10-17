@@ -1,4 +1,5 @@
-rm(list = ls())
+rm(list = setdiff(ls(), c('MHQ', 'MHO', 'MDQ', 'MDO', 'common.models.final',
+                          'per.comun.day', 'per.comun.h', 'estaciones')))
 
 # MHO <- readRDS('MHO.rds') #muy pesado (demasiado) #por que tengo donde más datos
 # MHQ <- readRDS('MHQ.rds')
@@ -60,21 +61,31 @@ aux.mq <- 'M6'
 n.sim <- 100
 set.seed(05052002)
 for (station in estaciones[1]){
-  mo <- MDO[[station]][[aux.mo]]
-  mq <- MDQ[[station]][[aux.mq]]
+  # mo <- MDO[[station]][[aux.mo]]
+  # mq <- MDQ[[station]][[aux.mq]]
+  
+  mo <- common.models.final[[station]][['MDO']]
+  mq <- common.models.final[[station]][['MDQ']]
   
   Xo <- MDO[[station]]$X
   Xo$date <- as.Date(paste(Xo$t, Xo$mes, Xo$dia.mes, sep = "-"), 
                      format = '%Y-%m-%d')
   
-  Xq <- MDQ[[station]]$X        
+  Xo <- Xo %>% filter(date >= per.comun.day[1] & date <= per.comun.day[2])
+  
+  Xq <- MDQ[[station]]$X       
+  
+  Xq$date <- as.Date(paste(Xq$t, Xq$mes, Xq$dia.mes, sep = "-"), 
+                     format = '%Y-%m-%d')
+  Xq <- Xq %>% filter(date >= per.comun.day[1] & date <= per.comun.day[2])
+  Xq <- Xq[, -ncol(Xq)]
   
   # Crear copias locales de las fórmulas
-  # mu.form <- sanitize_formula(mq$mu.formula)
-  # sigma.form <- sanitize_formula(mq$sigma.formula)
+  mu.form <- sanitize_formula(mq$mu.formula)
+  sigma.form <- sanitize_formula(mq$sigma.formula)
   
-  mu.form <- mq$mu.formula
-  sigma.form <- mq$sigma.formula
+  # mu.form <- mq$mu.formula
+  # sigma.form <- mq$sigma.formula
   
   print(mu.form)
   print(sigma.form)
