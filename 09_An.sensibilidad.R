@@ -419,22 +419,29 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
   aux <- c()
   aux.lag.T <- c()
   aux.lag.F <- c()
+  aux.top.quarter <- c()
+  
+  aux.equal <- c()
+  aux.lag.T.equal <- c()
+  aux.lag.F.equal <- c()
+  aux.top.quarter.equal <- c()
+  
   season.names <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
   
   i <- 1 #for season names in plot quantiles
-  
+  par(mfrow = c(3,2))
   for (indx in ind.list){
     q.obs <- quantile(x.obs[indx], probs = quantiles)
     names(q.obs) <- names.q
     #quantiles of simulation
     q.sim <- t(apply(y.sim[indx, ], 2, quantile, probs = quantiles, na.rm = T))
 
-    if (i == 1){
-      par(mfrow = c(1,1))
-    }
-    if (i == 2){
-      par(mfrow =c(2,2))
-    }
+    # if (i == 1){
+    #   par(mfrow = c(1,1))
+    # }
+    # if (i == 2){
+    #   par(mfrow =c(2,2))
+    # }
     
     if (plot == TRUE){
       if (!is.null(seasons)){
@@ -469,6 +476,13 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
     prob.gr.obs <- colSums(prob.gr.obs) / (nrow(q.sim))
     
     aux <- c(aux, prob.gr.obs) #here it ends
+    
+    #equal vales
+    prob.equal.obs <- q.sim == q.obs.matrix
+    prob.equal.obs <- colSums(prob.equal.obs) / (nrow(q.sim))
+    
+    aux.equal <- c(aux.equal, prob.equal.obs)
+
     
     #extreme lag day
     if (extreme.lag == TRUE){
@@ -584,12 +598,24 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
       
       aux.lag.T <- c(aux.lag.T, prob.gr.obs.lag.T)
       
+      #df3.equal
+      prob.equal.obs.lag.T <- q.sim.T == q.obs.matrix.lag.T
+      prob.equal.obs.lag.T <- colSums(prob.equal.obs.lag.T) / (nrow(q.sim.T))
+      
+      aux.lag.T.equal <- c(aux.lag.T.equal, prob.equal.obs.lag.T)
+      
       #df4
       q.obs.matrix.lag.F <- matrix(q.obs.F, nrow = nrow(q.sim.F), ncol = length(quantiles), byrow = T)
       prob.gr.obs.lag.F <- q.sim.F > q.obs.matrix.lag.F
       prob.gr.obs.lag.F <- colSums(prob.gr.obs.lag.F) / (nrow(q.sim.F))
       
       aux.lag.F <- c(aux.lag.F, prob.gr.obs.lag.F)
+      
+      #df4.equal
+      prob.equal.obs.lag.F <- q.sim.F == q.obs.matrix.lag.F
+      prob.equal.obs.lag.F <- colSums(prob.equal.obs.lag.F) / (nrow(q.sim.F))
+      
+      aux.lag.F.equal <- c(aux.lag.F.equal, prob.equal.obs.lag.F)
     }
     
     if (top.quarter.z.value == TRUE){
@@ -634,19 +660,58 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
         
       }
       
+      #df 5
+      q.obs.matrix.top.quarter <- matrix(q.obs.top.quarter, nrow = nrow(q.sim.top.quarter),
+                                         ncol = length(quantiles), byrow = T)
+      prob.gr.obs.top.quarter <- q.sim.top.quarter > q.obs.matrix.top.quarter
+      prob.gr.obs.top.quarter <- colSums(prob.gr.obs.top.quarter) / (nrow(q.sim.top.quarter))
       
-      # q.obs.matrix.top.quarter <- matrix(q.obs.top.quarter, nrow = nrow(q.sim.top.quarter), 
-      #                                    ncol = length(quantiles), byrow = T)
-      # prob.gr.obs.top.quarter <- q.sim.top.quarter > q.obs.matrix.top.quarter
-      # prob.gr.obs.top.quarter <- colSums(prob.gr.obs.top.quarter) / (nrow(q.sim.top.quarter))
-      # 
-      # # iguales ?
-      # prob.gr.obs.top.quarter.2 <- q.sim.top.quarter == q.obs.matrix.top.quarter
-      # prob.gr.obs.top.quarter.2 <- colSums(prob.gr.obs.top.quarter.2) / (nrow(q.sim.top.quarter))
+      aux.top.quarter <- c(aux.top.quarter, prob.gr.obs.top.quarter)
+
+      #df5.equal
+      prob.equal.obs.top.quarter <- q.sim.top.quarter == q.obs.matrix.top.quarter
+      prob.equal.obs.top.quarter <- colSums(prob.equal.obs.top.quarter) / (nrow(q.sim.top.quarter))
+      
+      aux.top.quarter.equal <- c(aux.top.quarter.equal, prob.equal.obs.top.quarter)
+      
+      if (extreme.lag == TRUE){
+        aux.X <- X[indx, ][top.quarter, ]
+        aux.ind <- order(aux.X[[paste0(station, '.p.lag')]], decreasing = T)[1:n.days]
+        
+        df2.top.quarter <- data.frame(
+          date = aux.X[aux.ind, 'date'],
+          x.obs = x.obs[indx][top.quarter][aux.ind],
+          x.lag.obs = aux.X[aux.ind , paste0(station, '.p.lag')]
+        )
+        
+        df2.top.quarter <- cbind(df2.top.quarter, y.sim[indx, ][top.quarter, ][aux.ind, ])
+        
+        if (plot == TRUE){
+          if (!is.null(seasons)){
+            title <- paste0("Extreme lag days ", 
+                            station, '-', model, 
+                            ' ', season.names[i - 1])
+          }else if (!is.null(month)){
+            title <- paste0("Extreme lag days ", 
+                            station, '-', model, 
+                            ' (months ', paste0(month, collapse = '-'), ')')
+          }else{
+            title <- paste0("Extreme lag days ", 
+                            station, '-', model)
+          }
+          boxplot(t(df2.top.quarter[, -c(1, 2, 3)]), 
+                  names = df2.top.quarter$date, ylab = 'Precipitation',
+                  xlab = 'Date', 
+                  main = paste(title, 'Top quarter', var.name))
+          points(1: nrow(df2.top.quarter), df2.top.quarter$x.obs, 
+                 col = 'red', pch = 19)
+        }
+      }
     }
   }
   
   df <- data.frame(matrix(aux, ncol = length(quantiles), byrow = T))
+  df.equal <- data.frame(matrix(aux.equal, ncol = length(quantiles), byrow = T))
   if(!is.null(seasons)){
     rownames(df) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
   }
@@ -654,16 +719,31 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
   
   if (partition.lag == TRUE){
     df3 <- data.frame(matrix(aux.lag.T, ncol = length(quantiles), byrow = T))
+    df4 <- data.frame(matrix(aux.lag.F, ncol = length(quantiles), byrow = T))
+    
+    df3.equal <- data.frame(matrix(aux.lag.T.equal, ncol = length(quantiles), byrow = T))
+    df4.equal <- data.frame(matrix(aux.lag.F.equal, ncol = length(quantiles), byrow = T))
     if(!is.null(seasons)){
-      rownames(df) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+      rownames(df3) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+      rownames(df4) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+      rownames(df3.equal) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+      rownames(df4.equal) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
     }
     colnames(df3) <- names.q
-    
-    df4 <- data.frame(matrix(aux.lag.F, ncol = length(quantiles), byrow = T))
-    if(!is.null(seasons)){
-      rownames(df) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
-    }
     colnames(df4) <- names.q
+    colnames(df3.equal) <- names.q
+    colnames(df4.equal) <- names.q
+  }
+  
+  if (top.quarter.z.value == TRUE){
+    df5 <- data.frame(matrix(aux.top.quarter, ncol = length(quantiles), byrow = T))
+    df5.equal <- data.frame(matrix(aux.top.quarter.equal, ncol = length(quantiles), byrow = T))
+    if(!is.null(seasons)){
+      rownames(df5) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+      rownames(df5.equal) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+    }
+    colnames(df5) <- names.q
+    colnames(df5.equal) <- names.q
     
   }
   
@@ -677,23 +757,38 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
   else if (extreme.lag == F & partition.lag == T){
     df <- list(
       prob.gr.q.obs = df,
+      prob.equal.q.obs = df.equal,
       y.sim = y.sim,
       prob.gr.q.obs.lag.T = df3,
-      prob.gr.q.obs.lag.F = df4)
+      prob.gr.q.obs.lag.F = df4,
+      prob.equal.q.obs.lag.T = df3.equal,
+      prob.equal.q.obs.lag.F = df4.equal)
   }
   else if (extreme.lag == T & partition.lag == T){
     df <- list(
       prob.gr.q.obs = df,
+      prob.equal.q.obs = df.equal,
       y.sim = y.sim,
       extreme.lag = df2,
       prob.gr.q.obs.lag.T = df3,
-      prob.gr.q.obs.lag.F = df4)
+      prob.gr.q.obs.lag.F = df4,
+      prob.equal.q.obs.lag.T = df3.equal,
+      prob.equal.q.obs.lag.F = df4.equal)
   }
   else{
     df <- list(
       prob.gr.q.obs = df,
+      prob.equal.q.obs = df.equal,
       y.sim = y.sim
     )
+  }
+  
+  if (top.quarter.z.value == TRUE){
+    df[['prob.gr.obs.top.quarter']] <- df5
+    df[['prob.equal.obs.top.quarter']] <- df5.equal
+    if(extreme.lag == TRUE){
+      df[['extreme.lag.top.quarter']] <- df2.top.quarter
+    }
   }
   
   return(df)
@@ -712,6 +807,7 @@ basura <- boxplot.q.sim(estaciones[1], X.MDO, common.models.final, 'MDQ',
               n.days = 8, 
               partition.lag = TRUE,
               top.quarter.z.value = TRUE)
+
 boxplot.q.sim(estaciones[1], X.MDQ, common.models.final, 'MDQ', 
               per.comun.day, 
               quantiles = c(0.05, 0.50, 0.90, 0.95, 0.99),
