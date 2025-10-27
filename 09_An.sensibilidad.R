@@ -151,7 +151,7 @@ generator.qty.oc <- function(station, data.mq, data.mo,
       cat("  ⚠️ Detectadas simulaciones inválidas en día ", i - 1, ": ",
           paste0(bad_idx_abs, collapse = ", "), " -> descartando\n")
       # Dejamos NA explícito (ya lo es) en la fila pasada; pero por claridad:
-      #sim_matrix[i - 1, bad_idx_abs] <- NA_real_
+      sim_matrix[i - 1, bad_idx_abs] <- NA_real_
       # Eliminamos esas simulaciones de active_sims para que no se usen como lag en adelante
       active_sims <- setdiff(active_sims, bad_idx_abs)
     }
@@ -245,6 +245,38 @@ library(Polychrome)
 cols <- createPalette(28, c("#FF0000", "#0000FF", "#00FF00", "#FFFF00",
                             '#FF00FF', '#FFA500', '#228B22', '#A020F0',
                             '#ADD8E6', '#EE82EE'))
+#particion según el lag
+partition.lag <- function(df){
+  aux.df <- data.frame(matrix(NA, ncol = ncol(df), nrow = nrow(df)))
+  colnames(aux.df) <- colnames(df)
+  for (j in 1:ncol(df)){
+    x <- df[, j]
+    aux.x <- x
+    for (i in 2:length(x)){
+      if (x[i-1] == 0){
+        aux.x[i] <- FALSE
+      }else{
+        aux.x[i] <- T
+      }
+    }
+    aux.df[, j] <- as.logical(aux.x)
+  }
+  
+  return(aux.df)
+}
+#indices que se corresponden con el cuarto de dias con mayor vaLor de la variable influyente
+top.quarter.max.z.value <- function(mod, indx){
+  z.values <- summary(mod)$coefficients[, 'z value']
+  
+  aux <- grep('z', names(z.values))
+  max.z.value <- z.values[aux][which.max(abs(z.values[aux]))]
+  var.name <- gsub("poly\\(([^,]+),.*", "\\1", names(max.z.value))
+  
+  data <- mod$data
+  top.quarter <- which(data[indx, var.name] >= quantile(data[indx, var.name], 0.75))
+  
+  return(list(var.name = var.name, top.quarter = top.quarter))
+}
 
 # dataframe of observed quantiles
 df.q <- function(stations, data, model.list, model,
@@ -308,7 +340,9 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
                           seasons = NULL, 
                           generator,
                           plot = FALSE, 
-                          extreme.lag = FALSE, n.days = NULL){
+                          extreme.lag = FALSE, n.days = NULL,
+                          partition.lag = FALSE,
+                          top.quarter.z.value = FALSE){
   
   mod <- model.list[[station]][[model]]
   X <- data[[station]]
@@ -380,7 +414,11 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
     
   }
   
+  mdo <- model.list[[station]][['MDO']]
+  
   aux <- c()
+  aux.lag.T <- c()
+  aux.lag.F <- c()
   season.names <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
   
   i <- 1 #for season names in plot quantiles
@@ -471,6 +509,141 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
                col = 'red', pch = 19)
       }
     }
+    
+    #partition of lags
+    if (partition.lag == TRUE){
+      aux.y.sim <- y.sim[indx, ] #simulacion en indices
+      y.sim.part.lag <- partition.lag(aux.y.sim) #partition en esa simulacion
+      
+      # T and F partitions of simulations
+      y.sim.lag.T <- aux.y.sim
+      y.sim.lag.T[!y.sim.part.lag] <- NA
+      
+      y.sim.lag.F <- aux.y.sim
+      y.sim.lag.F[y.sim.part.lag == T] <- NA
+      
+      #simulation quantiles
+      q.sim.T <- t(apply(y.sim.lag.T, 2, quantile, probs = quantiles, na.rm = T))
+      q.sim.F <- t(apply(y.sim.lag.F, 2, quantile, probs = quantiles, na.rm = T))
+      
+      #observed quantiles of partitions
+      x.obs.part <- partition.lag(data.frame(x.obs[indx]))
+      
+      x.obs.lag.T <- x.obs[indx]
+      x.obs.lag.T[!x.obs.part] <- NA
+      
+      x.obs.lag.F <- x.obs[indx]
+      x.obs.lag.F[x.obs.part == T] <- NA
+      
+      q.obs.T <- quantile(x.obs.lag.T, probs = quantiles, na.rm = T)
+      q.obs.F <- quantile(x.obs.lag.F, probs = quantiles, na.rm = T)
+      
+      if (plot == TRUE){
+        if (!is.null(seasons)){
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', model, 
+                          ' ', season.names[i - 1])
+        }
+        else if (!is.null(month)){
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', model, 
+                          ' (months ', paste0(month, collapse = '-'), ')')
+        }
+        else{
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', model)
+        }
+        
+        boxplot(q.sim.T,
+                at = q.obs.T,               
+                names = paste0(quantiles, '.obs'),  
+                xlim = c(q.obs.T[1]-0.5, q.obs.T[5]+0.5),
+                ylim = c(0, max(q.sim.T)),
+                col = "lightblue",
+                main = paste(title, '(lag == TRUE)'),
+                ylab = "Simulated values",
+                xlab = "Observed quantiles")
+        lines(q.obs.T, q.obs.T, col = "red", pch = 19, cex = 1.3, type = 'b')
+        
+        boxplot(q.sim.F,
+                at = q.obs.F,               
+                names = paste0(quantiles, '.obs'),  
+                xlim = c(q.obs.F[1]-0.5, q.obs.F[5]+0.5),
+                ylim = c(0, max(q.sim.F)),
+                col = "lightblue",
+                main = paste(title, '(lag == FALSE)'),
+                ylab = "Simulated values",
+                xlab = "Observed quantiles")
+        lines(q.obs.F, q.obs.F, col = "red", pch = 19, cex = 1.3, type = 'b')
+      }
+      
+      #df3
+      q.obs.matrix.lag.T <- matrix(q.obs.T, nrow = nrow(q.sim.T), ncol = length(quantiles), byrow = T)
+      prob.gr.obs.lag.T <- q.sim.T > q.obs.matrix.lag.T
+      prob.gr.obs.lag.T <- colSums(prob.gr.obs.lag.T) / (nrow(q.sim.T))
+      
+      aux.lag.T <- c(aux.lag.T, prob.gr.obs.lag.T)
+      
+      #df4
+      q.obs.matrix.lag.F <- matrix(q.obs.F, nrow = nrow(q.sim.F), ncol = length(quantiles), byrow = T)
+      prob.gr.obs.lag.F <- q.sim.F > q.obs.matrix.lag.F
+      prob.gr.obs.lag.F <- colSums(prob.gr.obs.lag.F) / (nrow(q.sim.F))
+      
+      aux.lag.F <- c(aux.lag.F, prob.gr.obs.lag.F)
+    }
+    
+    if (top.quarter.z.value == TRUE){
+      aux.y.sim <- y.sim[indx, ]#ismulacion en indices
+      # indices de este subcojunto
+      var.name <- top.quarter.max.z.value(mdo, indx)[[1]]
+      top.quarter <- top.quarter.max.z.value(mdo, indx)[[2]] 
+      
+      #guardado de simulaciones del top quarter
+      y.sim.top.quarter <- aux.y.sim[top.quarter, ]
+      q.sim.top.quarter <- t(apply(y.sim.top.quarter, 2, 
+                                   quantile, probs = quantiles, na.rm = T))
+      x.obs.top.quarter <- x.obs[indx][top.quarter]
+      q.obs.top.quarter <- quantile(x.obs.top.quarter, probs = quantiles, na.rm = T)
+      
+      if (plot == TRUE){
+        if (!is.null(seasons)){
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', model, 
+                          ' ', season.names[i - 1])
+        }
+        else if (!is.null(month)){
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', model, 
+                          ' (months ', paste0(month, collapse = '-'), ')')
+        }
+        else{
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', model)
+        }
+        boxplot(q.sim.top.quarter,
+                at = q.obs.top.quarter,               
+                names = paste0(quantiles, '.obs'),  
+                xlim = c(q.obs.top.quarter[1]-0.5, q.obs.top.quarter[5]+0.5),
+                ylim = c(0, max(q.sim.top.quarter)),
+                col = "lightblue",
+                main = paste(title, '- Top quarter', var.name),
+                ylab = "Simulated values",
+                xlab = "Observed quantiles")
+        lines(q.obs.top.quarter, q.obs.top.quarter, col = "red", pch = 19, cex = 1.3, type = 'b')
+        
+        
+      }
+      
+      
+      # q.obs.matrix.top.quarter <- matrix(q.obs.top.quarter, nrow = nrow(q.sim.top.quarter), 
+      #                                    ncol = length(quantiles), byrow = T)
+      # prob.gr.obs.top.quarter <- q.sim.top.quarter > q.obs.matrix.top.quarter
+      # prob.gr.obs.top.quarter <- colSums(prob.gr.obs.top.quarter) / (nrow(q.sim.top.quarter))
+      # 
+      # # iguales ?
+      # prob.gr.obs.top.quarter.2 <- q.sim.top.quarter == q.obs.matrix.top.quarter
+      # prob.gr.obs.top.quarter.2 <- colSums(prob.gr.obs.top.quarter.2) / (nrow(q.sim.top.quarter))
+    }
   }
   
   df <- data.frame(matrix(aux, ncol = length(quantiles), byrow = T))
@@ -479,16 +652,48 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
   }
   colnames(df) <- names.q
   
-  if(extreme.lag == T){
+  if (partition.lag == TRUE){
+    df3 <- data.frame(matrix(aux.lag.T, ncol = length(quantiles), byrow = T))
+    if(!is.null(seasons)){
+      rownames(df) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+    }
+    colnames(df3) <- names.q
+    
+    df4 <- data.frame(matrix(aux.lag.F, ncol = length(quantiles), byrow = T))
+    if(!is.null(seasons)){
+      rownames(df) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+    }
+    colnames(df4) <- names.q
+    
+  }
+  
+  if(extreme.lag == T & partition.lag == FALSE){
     df <- list(
       prob.gr.q.obs = df,
       extreme.lag = df2,
       y.sim = y.sim
     )
-  }else{
+  }
+  else if (extreme.lag == F & partition.lag == T){
     df <- list(
       prob.gr.q.obs = df,
-      y.sim = y.sim)
+      y.sim = y.sim,
+      prob.gr.q.obs.lag.T = df3,
+      prob.gr.q.obs.lag.F = df4)
+  }
+  else if (extreme.lag == T & partition.lag == T){
+    df <- list(
+      prob.gr.q.obs = df,
+      y.sim = y.sim,
+      extreme.lag = df2,
+      prob.gr.q.obs.lag.T = df3,
+      prob.gr.q.obs.lag.F = df4)
+  }
+  else{
+    df <- list(
+      prob.gr.q.obs = df,
+      y.sim = y.sim
+    )
   }
   
   return(df)
@@ -503,8 +708,10 @@ basura <- boxplot.q.sim(estaciones[1], X.MDO, common.models.final, 'MDQ',
               seasons = TRUE,
               generator = 3,
               plot = TRUE, 
-              extreme.lag = T,
-              n.days = 8)
+              extreme.lag = TRUE,
+              n.days = 8, 
+              partition.lag = TRUE,
+              top.quarter.z.value = TRUE)
 boxplot.q.sim(estaciones[1], X.MDQ, common.models.final, 'MDQ', 
               per.comun.day, 
               quantiles = c(0.05, 0.50, 0.90, 0.95, 0.99),
@@ -525,10 +732,20 @@ df.q.sim.gr.obs <- function(stations, data, model.list, model, period,
                             seasons = NULL, generator, 
                             plot = FALSE,
                             cols = NULL){
+  
+  if (!is.null(seasons)){
+    n <- length(quantiles) * 5
+    names.q <- paste0('q', quantiles)
+    names.q <- as.vector(outer(names.q, 
+                    c('ALL', 'JJA', 'SON', 'DJF', 'MAM'), paste, sep = "."))
+  }else{
+    n <- length(quantiles)
+    names.q <- paste0('q', quantiles)
+  }
   df <- data.frame(
-    matrix(NA, ncol = length(quantiles) + 1, nrow = length(stations))
+    matrix(NA, ncol = n + 1, nrow = length(stations))
   )
-  names.q <- paste0('q', quantiles)
+  
   names(df) <- c('station', names.q)
   df$station <- stations
   
@@ -555,20 +772,39 @@ df.q.sim.gr.obs <- function(stations, data, model.list, model, period,
   
   
   if (plot == TRUE){
-    boxplot(df[, -1], xlab = 'Quantiles', ylab = 'P(q.sim > q.obs)',
-            main = paste('P(q.sim > q.obs) months',
-                         paste0(month, collapse = '-'), '-', model))
-    # plot(1:5, df[1, -1], type = 'b', pch = 19,
-    #      xaxt = 'n', xlab = 'Quantiles', ylab = 'P(q.sim > q.obs)',
-    #      ylim = c(0,1), col = cols[1])
-    #axis(1, at = 1:5, labels = paste0('q', c(0.05, 0.50, 0.90, 0.95, 0.99)))
-    for(i in 1:length(stations)){
-      lines(1:5, df[i, -1], pch = 19, type = 'b', col = cols[i])
+    if(is.null(seasons)){
+      boxplot(df[, -1], xlab = 'Quantiles', ylab = 'P(q.sim > q.obs)',
+              main = paste('P(q.sim > q.obs) months',
+                           paste0(month, collapse = '-'), '-', model))
+      # plot(1:5, df[1, -1], type = 'b', pch = 19,
+      #      xaxt = 'n', xlab = 'Quantiles', ylab = 'P(q.sim > q.obs)',
+      #      ylim = c(0,1), col = cols[1])
+      #axis(1, at = 1:5, labels = paste0('q', c(0.05, 0.50, 0.90, 0.95, 0.99)))
+      for(i in 1:length(stations)){
+        lines(1:5, df[i, -1], pch = 19, type = 'b', col = cols[i])
+      }
+      abline(h = 0.25, lty = 2, lwd = 2)
+      abline(h = 0.75, lty = 2, lwd = 2)
+      legend("topleft", legend = stations,
+             col = cols, lwd = 2, ncol = 2, cex = 0.5)
+    }else{
+      par(mfrow = c(1,1))
+      boxplot(df[, -1], xlab = 'Quantiles', ylab = 'P(q.sim > q.obs)',
+              main = paste('P(q.sim > q.obs) by seasons', '-', model),
+              cex.axis = 0.7)
+      # plot(1:5, df[1, -1], type = 'b', pch = 19,
+      #      xaxt = 'n', xlab = 'Quantiles', ylab = 'P(q.sim > q.obs)',
+      #      ylim = c(0,1), col = cols[1])
+      #axis(1, at = 1:5, labels = paste0('q', c(0.05, 0.50, 0.90, 0.95, 0.99)))
+      # for(i in 1:length(stations)){
+      #   lines(1:25, df[i, -1], pch = 19, type = 'b', col = cols[i])
+      # }
+      abline(h = 0.25, lty = 2, lwd = 2)
+      abline(h = 0.75, lty = 2, lwd = 2)
+      # legend("topleft", legend = stations,
+      #        col = cols, lwd = 2, ncol = 2, cex = 0.5)
     }
-    abline(h = 0.25, lty = 2, lwd = 2)
-    abline(h = 0.75, lty = 2, lwd = 2)
-    legend("topleft", legend = stations,
-           col = cols, lwd = 2, ncol = 2, cex = 0.5)
+    
     
   }
   
@@ -577,15 +813,17 @@ df.q.sim.gr.obs <- function(stations, data, model.list, model, period,
 
 set.seed(05052002)
 #the only one that correpsonds to the boxplot plots is the first (due to the seed)
-df.q.sim.gr.obs.gen.2.ALL <- df.q.sim.gr.obs(estaciones, 
+df.q.sim.gr.obs.gen.3.ALL <- df.q.sim.gr.obs(estaciones, 
                                              X.MDO, common.models.final, 'MDQ', 
                                              per.comun.day, 
                                              quantiles = c(0.05, 0.50, 0.90, 0.95, 0.99),
                                              n.sim = 100, month = NULL,
                                              seasons = T,
-                                             generator = 2,
+                                             generator = 3,
                                              plot = T, cols = cols
                                              )
+
+
 df.q.sim.gr.obs(estaciones, 
                 X.MDQ, common.models.final, 'MDQ', 
                 per.comun.day, 
@@ -721,11 +959,103 @@ partition.lag <- function(df){
   return(aux.df)
 }
 
-#substract first day
-basura.sim.part.lag <- partition.lag(basura.sim)[-1, ]
 
-apply(basura.sim.part.lag,2, function(x) sum(x == T))
-basura.sim.lag.T <- 
+basura.sim.part.lag <- partition.lag(basura.sim)
 
-m <- common.models.final[[station]][['MDO']]
-summary(m)
+basura.sim.lag.T <- basura.sim
+basura.sim.lag.T[!basura.sim.part.lag] <- NA
+
+basura.sim.lag.F <- basura.sim
+basura.sim.lag.F[basura.sim.part.lag == T] <- NA
+#substract first day of partitions
+basura.sim.lag.F <- basura.sim.lag.F[-1, ]
+basura.sim.lag.T <- basura.sim.lag.T[-1, ]
+
+#quantiles of partitions
+quantiles <- c(0.05, 0.5, 0.90, 0.95, 0.99)
+
+q.sim.T <- t(apply(basura.sim.lag.T, 2, quantile, probs = quantiles, na.rm = T))
+q.sim.F <- t(apply(basura.sim.lag.F, 2, quantile, probs = quantiles, na.rm = T))
+
+# observed quantiles (in function up)
+data <- X.MDO
+X <- data[[station]]
+period <- per.comun.day
+X <- data[[station]]
+X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = '-'),                                      format = '%Y-%m-%d')
+X <- X %>%     filter(date >= period[1] & date <= period[2])
+x.obs <- X[[paste0(station, '.p')]]
+
+#partition of observed quantiles
+x.obs.part <- partition.lag(data.frame(x.obs))
+
+x.obs.lag.T <- x.obs
+x.obs.lag.T[!x.obs.part] <- NA
+
+x.obs.lag.F <- x.obs
+x.obs.lag.F[x.obs.part == T] <- NA
+
+q.obs.T <- quantile(x.obs.lag.T, probs = quantiles, na.rm = T)
+q.obs.F <- quantile(x.obs.lag.F, probs = quantiles, na.rm = T)
+
+# if plot = T
+boxplot(q.sim.F,
+        at = q.obs.F,               
+        names = paste0(quantiles, '.obs'),  
+        xlim = c(q.obs.F[1]-0.5, q.obs.F[5]+0.5),
+        ylim = c(0, max(q.sim.F)),
+        col = "lightblue",
+        main = 'Hola',
+        ylab = "Simulated values",
+        xlab = "Observed quantiles")
+lines(q.obs.F, q.obs.F, col = "red", pch = 19, cex = 1.3, type = 'b')
+
+
+# studying the Z values of the models of ocurrence 
+#(which seems to be causing the problems)
+# becuase of the graphs of extreme values
+top.quarter.max.z.value <- function(mod, indx){
+  z.values <- summary(mod)$coefficients[, 'z value']
+  
+  aux <- grep('z', names(z.values))
+  max.z.value <- z.values[aux][which.max(abs(z.values[aux]))]
+  var.name <- gsub("poly\\(([^,]+),.*", "\\1", names(max.z.value))
+  
+  data <- mod$data
+  top.quarter <- which(data[indx, var.name] >= quantile(data[indx, var.name], 0.75))
+  
+  return(top.quarter)
+}
+
+
+top.quarter.2 <- top.quarter.max.z.value(m, indx = ind.list$ind.djf)
+
+y.sim <- basura[[2]]
+y.sim <- y.sim[ind.list$ind.djf, ]
+ind <- top.quarter.2[[2]]
+y.sim.top.quarter <- y.sim[ind, ]
+q.sim.top.quarter <- t(apply(y.sim.top.quarter, 2, 
+                             quantile, probs = quantiles, na.rm = T))
+x.obs.top.quarter <- x.obs[ind.list$ind.djf][ind]
+q.obs.top.quarter <- quantile(x.obs.top.quarter, probs = quantiles, na.rm = T)
+
+boxplot(q.sim.top.quarter,
+        at = q.obs.top.quarter,               
+        names = paste0(quantiles, '.obs'),  
+        xlim = c(q.obs.top.quarter[1]-0.5, q.obs.top.quarter[5]+0.5),
+        ylim = c(0, max(q.sim.top.quarter)),
+        col = "lightblue",
+        main = 'Hola',
+        ylab = "Simulated values",
+        xlab = "Observed quantiles")
+lines(q.obs.top.quarter, q.obs.top.quarter, col = "red", pch = 19, cex = 1.3, type = 'b')
+
+
+q.obs.matrix.top.quarter <- matrix(q.obs.top.quarter, nrow = nrow(q.sim.top.quarter), 
+                                   ncol = length(quantiles), byrow = T)
+prob.gr.obs.top.quarter <- q.sim.top.quarter > q.obs.matrix.top.quarter
+prob.gr.obs.top.quarter <- colSums(prob.gr.obs.top.quarter) / (nrow(q.sim.top.quarter))
+
+# iguales ?
+prob.gr.obs.top.quarter.2 <- q.sim.top.quarter == q.obs.matrix.top.quarter
+prob.gr.obs.top.quarter.2 <- colSums(prob.gr.obs.top.quarter.2) / (nrow(q.sim.top.quarter))
