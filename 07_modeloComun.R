@@ -279,10 +279,16 @@ mod.aux.firth
 
 aux <- data.frame(dfbetas(mod.aux))
 thresh <- 2 / sqrt(nrow(data.aux))
-par(mfrow = c(1,4))
-plot(aux$poly.R037.p.lag..3.3)
+vars <- names(aux)[-1]
+par(mfrow = c(2,4))
+plot(aux[, vars[1]], main = vars[1], ylab = '')
 abline(h = thresh, col = 'red')
 abline(h = -thresh, col = 'red')
+for (i in 2:length(vars)){
+  plot(aux[, vars[i]], ylab = '', main = vars[i])
+  abline(h = thresh, col = 'red')
+  abline(h = -thresh, col = 'red')
+}
 
 data.aux[which.min(aux$poly.R037.p.lag..3.1), paste0(station.p, '.lag')]
 
@@ -290,9 +296,9 @@ data.aux[which.min(aux$poly.R037.p.lag..3.1), paste0(station.p, '.lag')]
 library(gam)
 for(station in estaciones){
   station.p <- paste0(station, '.p')
-  X <- MDQ[[station]]$X
+  X <- X.MHO[[station]]
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = '%Y-%m-%d')
-  data.aux <- X %>% filter(date >= per.comun.day[1] & date <= per.comun.day[2])
+  data.aux <- X %>% filter(date >= per.comun.h[1] & date <= per.comun.h[2])
   
   basura <- gam(formula = as.formula(paste0(station.p, ' ~ s(', station.p, '.lag)')) , 
                 data = as.data.frame(data.aux), family = Gamma(link = 'log'))

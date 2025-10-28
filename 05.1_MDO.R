@@ -203,11 +203,14 @@ MDO <- readRDS('MDO.rds')
 # M5 Y M6 ....
 library(gam)
 deg_list <- list()
+deg_list.new <- list() #0 es igual a log
 for (station in estaciones){
   vars <- names(MDO[[station]]$vars.M4)
   vars_era5 <- vars[grepl('z', vars)]
   deg_list[[station]] <- rep(0, times = length(vars_era5))
   names(deg_list[[station]]) <- vars_era5
+  deg_list.new[[station]] <- rep(0, times = length(vars_era5))
+  names(deg_list.new[[station]]) <- vars_era5
   # for (var in vars_era5){
   #   plot(gam(formula = as.formula(paste('Y ~ s(', var, ')')), data = MDO[[station]]$X),
   #        main = paste(station, var, sep = '-'))
@@ -224,8 +227,8 @@ for (station in estaciones) {
       '\n', "(separados por espacios, y pulsa Enter al final):\n")
   vec <- scan(what = numeric(), quiet = TRUE)
   aux <- names(deg_list[[station]])
-  deg_list[[station]] <- vec
-  names(deg_list[[station]]) <- aux
+  deg_list.new[[station]] <- vec
+  names(deg_list.new[[station]]) <- aux
   dev.off()
 }
 
@@ -614,4 +617,25 @@ mapa_calor <- function(df, tipo = c("AUC", "AIC")) {
 mapa_calor(auc.df, tipo = 'AUC')
 mapa_calor(auc.df.pc, tipo = 'AUC')
 mapa_calor(AIC.df, tipo = 'AIC')
+
+
+
+#extra 
+X.MDO <- qread('X.MDO.qs')
+station <- estaciones[1]
+X <- X.MDO[[station]]
+df.less.0 <- data.frame(matrix(NA, ncol = 12, nrow = 28))
+rownames(df.less.0) <- estaciones
+colnames(df.less.0) <- colnames(X)[grep('zt', colnames(X))]
+
+for (i in 1:length(estaciones)){
+  station <- estaciones[i]
+  X <- X.MDO[[station]]
+  cols <- grep('zt', colnames(X))
+  X.sub <- X[, cols]
+  cont <- apply(X.sub, 2, function(x) sum(x < 0))
+  df.less.0[i, ] <- cont == nrow(X)
+}
+
+apply(df.less.0, 2, sum)
 

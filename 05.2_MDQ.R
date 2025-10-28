@@ -230,12 +230,12 @@ saveRDS(MDQ, 'MDQ.rds')
 
 # M6. Check transformations
 library(gam)
-deg_list <- list()
+deg_list.new <- list()
 for (station in estaciones){
   vars <- names(MDQ[[station]]$vars.M5)
   vars_era5 <- vars[grepl('z', vars)]
-  deg_list[[station]] <- rep(0, times = length(vars_era5))
-  names(deg_list[[station]]) <- vars_era5
+  deg_list.new[[station]] <- rep(0, times = length(vars_era5))
+  names(deg_list.new[[station]]) <- vars_era5
   # for (var in vars_era5){
   #   plot(gam(formula = as.formula(paste('Y ~ s(', var, ')')), data = MDQ[[station]]$X),
   #        main = paste(station, var, sep = '-'))
@@ -245,17 +245,17 @@ for (station in estaciones){
 #already done and all of them have dont look like deg 1 or 2, so we choose deg 3
 for (station in estaciones) {
   station.p <- paste0(station, '.p')
-  # for (var in rev(names(deg_list[[station]]))){
-  #   plot(gam(formula = as.formula(paste(station.p, '~ s(', var, ')')), data = MDQ[[station]]$X),
-  #        main = paste(station, var, sep = '-'))
-  # }
-  # cat("Introduce los valores del vector de grados de la estación", station, 
-  #     '\n', "(separados por espacios, y pulsa Enter al final):\n")
-  # vec <- scan(what = numeric(), quiet = TRUE)
-  aux <- names(deg_list[[station]])
-  deg_list[[station]] <- rep(3, times = length(deg_list[[station]]))
-  names(deg_list[[station]]) <- aux
-  # dev.off()
+  for (var in rev(names(deg_list.new[[station]]))){
+    plot(gam(formula = as.formula(paste(station.p, '~ s(', var, ')')), data = MDQ[[station]]$X),
+         main = paste(station, var, sep = '-'))
+  }
+  cat("Introduce los valores del vector de grados de la estación", station,
+      '\n', "(separados por espacios, y pulsa Enter al final):\n")
+  vec <- scan(what = numeric(), quiet = TRUE)
+  aux <- names(deg_list.new[[station]])
+  deg_list.new[[station]] <- rep(3, times = length(deg_list.new[[station]]))
+  names(deg_list.new[[station]]) <- aux
+  dev.off()
 }
 
 saveRDS(deg_list, 'deg_list_MDQ.rds')
@@ -723,3 +723,24 @@ for (i in 1:k) {
 
 # Promedio del rendimiento fuera de muestra
 colMeans(resultados)
+
+
+# EXTRA
+X.MDQ <- qread('X.MDQ.qs')
+station <- estaciones[1]
+X <- X.MDQ[[station]]
+df.less.0 <- data.frame(matrix(NA, ncol = 12, nrow = 28))
+rownames(df.less.0) <- estaciones
+colnames(df.less.0) <- colnames(X)[grep('zt', colnames(X))]
+
+for (i in 1:length(estaciones)){
+  station <- estaciones[i]
+  X <- X.MDQ[[station]]
+  cols <- grep('zt', colnames(X))
+  X.sub <- X[, cols]
+  cont <- apply(X.sub, 2, function(x) sum(x < 0))
+  df.less.0[i, ] <- cont == nrow(X)
+}
+
+apply(df.less.0, 2, sum)
+
