@@ -672,3 +672,169 @@ aux$ind <- aux.ind
 
 aux.marcador <- is.element(aux$ind, 3)
 unique(aux[aux.marcador, 'h'])
+
+#----HERRAMIENTA ANALISIS CRITICO----
+# análisis de días críticos
+# filtar al periodo comun de las horas
+library(lubridate)
+n <- length(estaciones)
+aux <- apply(df_hours[, paste0(estaciones, '.p')], 1, function(row) all(!is.na(row)))
+first <- which(aux)[1]
+last <- tail(which(aux), 1)
+date.first <- as.Date(paste0(df_hours[first, c('dia.mes', 'mes', 't')], collapse = '-'), format = '%d-%m-%Y')
+date.last <- as.Date(paste0(df_hours[last, c('dia.mes', 'mes', 't')], collapse = '-'), format = '%d-%m-%Y')
+per.comun.h <- c(date.first, date.last)
+rm(list = setdiff(ls(), c('estaciones', 'df_hours', 'df_minutes', 'stations', 'per.comun.h')))
+
+df_hours$date <- as.Date(paste(df_hours$t, df_hours$mes, df_hours$dia.mes, sep = "-"), format = '%Y-%m-%d')
+df_hours <- df_hours %>% filter(date >= per.comun.h[1] & date <= per.comun.h[2])
+
+df_minutes$date <- as.Date(paste(df_minutes$t, df_minutes$mes, df_minutes$dia.mes, sep = "-"), format = '%Y-%m-%d')
+df_minutes <- df_minutes %>% filter(date >= per.comun.h[1] & date <= per.comun.h[2])
+
+# calculo de máximo horario regional
+cols <- paste0(estaciones, ".p")
+max.reg <- apply(df_hours[, paste0(estaciones, '.p')], 1, max, na.rm = T)
+df_hours$max.reg <- max.reg
+# guardado de nombres en que estacion
+df_hours$estacion.max <- apply(df_hours[, cols], 1, function(x) {
+  if (all(is.na(x))) {
+    return(NA)  # si toda la fila es NA
+  } else {
+    idx <- which.max(x)      # posición del máximo
+    return(estaciones[idx])  # nombre de la estación
+  }
+})
+#filtrado para maximos regionales > 0
+df_hours.max.gr.0 <- df_hours[df_hours$max.reg > 0, ]
+thresh <- quantile(df_hours.max.gr.0[['max.reg']], prob = 0.99)
+#lo que pasan el umbral
+df_hours.above.thresh <- df_hours.max.gr.0[df_hours.max.gr.0[['max.reg']] > thresh, ]
+
+#ver para esos días los datos 15'
+#fijarse en date y h
+df_minutes.above.thresh <- df_minutes %>%
+  semi_join(df_hours.above.thresh, by = c("date", "h"))
+
+#funcion o bucle que me devuelva para cada hora si TRUE o no segun la proporcion
+ind.crit <- c()
+for (i in 1:nrow(df_hours.above.thresh)){
+  value.h <- df_hours.above.thresh$max.reg[i]
+  col <- paste0(df_hours.above.thresh$estacion.max[i], '.p')
+  date <- df_hours.above.thresh$date[i]
+  h <- df_hours.above.thresh$h[i]
+  
+  values.min <- df_minutes.above.thresh %>%
+    filter(date == !!date, h == !!h) %>%
+    pull(!!sym(col))
+  
+  if(sum(values.min/value.h > 0.85) >= 1){
+    ind.crit[i] <- TRUE
+  }else{
+    ind.crit[i] <- FALSE
+  }
+}
+
+crit.h <- df_hours.above.thresh[ind.crit, ]
+crit.min <- df_minutes.above.thresh %>%
+  semi_join(crit.h, by = c("date", "h"))
+
+#ahora para cada día crítico pintar en mapa junto a dos horas anteriores y posteriores
+i <- 1
+date <- crit.h$date[i]
+h <- crit.h$h[i]
+#match con el df_original
+i.og <- which(df_hours$date == date & df_hours$h == h)
+aux.df <- df_hours[c(i.og - 2, i.og - 1, i.og, i.og + 1, i.og + 2), ]
+
+#maps of this days
+load('Mapas/data_mapas.RData')
+library(ggplot2)
+library(st)
+library(sf)
+mapa.ind <- function(data, crit.h){
+  
+  data.map <- data.frame(cbind(st_coordinates(stations),
+                    stations$STAID, 
+                    t(data[crit.h, paste0(estaciones, '.p')])))
+  names(data.map)[ncol(data.map)] <- 'p.h'
+  data.map$p.h <- as.numeric(data.map$p.h)
+  data.map$X <- as.numeric(data.map$X)
+  data.map$Y <- as.numeric(data.map$Y)
+  data.map <- data.map %>%
+    mutate(color = case_when(
+      p.h >= 0   & p.h < 1   ~ "forestgreen",
+      p.h >= 1   & p.h <= 7.5 ~ "blue",
+      p.h > 7.5              ~ "red",
+      TRUE                   ~ NA_character_  # por si hay valores fuera de rango o NA
+    ))
+  
+  fecha <- data$date[crit.h]
+  h <- data$h[crit.h]
+  station <- data.map[which(data.map$p.h == max(data.map$p.h, na.rm = T)),3]
+  
+  if (calculate.min.val == TRUE){
+    
+  }
+  
+  if (!is.null(values.min)){
+    title <- paste0(fecha, '-', h, 'h', ' - ', station, " 15' data: ", values.min)
+  }else{
+    title <- paste0(fecha, '-', h, 'h', ' - ', station, " 15' data: ")
+  }
+  
+  map_zone <- ggplot(hypsobath) +
+    geom_sf(aes(fill = val_inf), color = NA) +
+    geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
+    coord_sf(xlim = st_coordinates(limits)[,1], 
+             ylim = st_coordinates(limits)[,2]) + 
+    scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
+                      breaks = levels(hypsobath$val_inf),
+                      guide = 'none') +
+    xlab("Longitud") + ylab("Latitud") +
+    
+    # no NA
+    geom_point(aes(x = X, y = Y, 
+                   size = data.map[!is.na(data.map[['p.h']]), 'p.h'], 
+                   color = data.map[!is.na(data.map[['p.h']]), 'color']), 
+               data = data.map[!is.na(data.map[['p.h']]), ]) +
+    scale_size_continuous(name = "Lluvia", 
+                          limits = range(data.map[['p.h']], na.rm = TRUE)) +
+    # NA
+    # geom_point(aes(x = X, y = Y, 
+    #                color = stations$color[is.na(data[[col]])]), 
+    #            data = data[is.na(data[[col]]), ], 
+    #            shape = 4, size = 2, stroke = 1.5) +
+    
+    ggrepel::geom_label_repel(aes(x = X, y = Y, 
+                                  label = data.map[!is.na(data.map[['p.h']]), 'p.h'], 
+                                  color = data.map[!is.na(data.map[['p.h']]), 'color']), 
+                              size = 3.5,
+                              position = 'identity', label.size = 0.025,
+                              max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                              data = data.map[!is.na(data.map[['p.h']]), ],
+                              seed = 23) +
+    
+    scale_color_identity() +
+    ggtitle(label = title)
+  
+  return(map_zone)
+}
+
+mapa.ind(df_hours, i.og)
+
+
+mapa.ev <- function(data, event.no, event.type){
+  
+  m1 <- mapa.ind(data, event.no, event.type, '-2h')
+  m2 <- mapa.ind(data, event.no, event.type, '-1h')
+  m3 <- mapa.ind(data, event.no, event.type, '')
+  m4 <- mapa.ind(data, event.no, event.type, '+1h')
+  m5 <- mapa.ind(data, event.no, event.type, '+2h')
+  
+  mapa <- ggpubr:: ggarrange(m1, m2, m3, m4, m5, 
+                             ncol = 5,
+                             common.legend = T,
+                             legend = 'bottom')
+  return(mapa)
+}

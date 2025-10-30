@@ -3,11 +3,17 @@ rm(list = ls())
 load('data.RData')
 
 library(lubridate)
+library(dplyr)
 # In the covariates matrix we add the climate variables
 global_df <- readRDS('global_df.rds')
 global_df$t <- year(global_df$date)
 global_df <- global_df[, -which(colnames(global_df) %in% c('zg300.', 'zg500.', 'zg700.', 
                                                            'zt300.', 'zt500.', 'zt700.'))]
+#lags
+global_df <- global_df %>%
+  mutate(across(8:ncol(.), ~ lag(.), .names = "{.col}.lag"))
+  
+  
 
 #periodo comun
 n <- length(estaciones)
@@ -48,10 +54,10 @@ df_days <- df_days %>%
 #----Data building and M1, M2, M3, M4----
 library(gamlss)
 X_list <- list()
-M1_list <- list()
-M2_list <- list()
-M3_list <- list()
-M4_list <- list()
+# M1_list <- list()
+# M2_list <- list()
+# M3_list <- list()
+# M4_list <- list()
 for (station in estaciones){
   station.p <- paste0(station, '.p')
   
@@ -71,40 +77,42 @@ for (station in estaciones){
     filter(.data[[station.p]] > 0) %>%
     as.data.frame() %>%
     na.omit()
+  #lags 
   
-  formula_M1 <- as.formula(paste(station.p, '~', paste(c(colnames(harm_l)[2:ncol(harm_l)]),
-                                                      collapse = '+')))
-  formula_M2 <- as.formula(paste(station.p, '~', paste(
-    colnames(X_list[[station]])[15:ncol(X_list[[station]])], collapse = '+'
-  )))
   
-  formula_M3 <- as.formula(
-    paste(station.p, '~', paste(
-      colnames(X_list[[station]])[7:ncol(X_list[[station]])], collapse = '+')
-    ))
-  
-  cat('Ajuste modelo M1: ', deparse(formula_M1), '\n')
-  M1_list[[station]] <- glm(formula = formula_M1, family = Gamma(link = 'log'), 
-                            data = X_list[[station]], control = glm.control(maxit = 200))
-  
-  cat('Ajuste modelo M2: ', deparse(formula_M2), '\n')
-  M2_list[[station]] <- glm(formula = formula_M2, family = Gamma(link = 'log'), 
-                            data = X_list[[station]], control = glm.control(maxit = 200))
-  
-  cat('Ajuste modelo M3: ', deparse(formula_M3), '\n')
-  M3_list[[station]] <- glm(formula = formula_M3, family = Gamma(link = 'log'), 
-                            data = X_list[[station]], control = glm.control(maxit = 200))
-  
-  #modelos con CV variante segun armonicos
-  
-  formula_M4 <- formula_M3
-  
-  cat('Ajuste modelo M4: ', deparse(formula_M4), '\n')
-  M4_list[[station]] <- gamlss(formula_M4, 
-                               sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
-                               family = GA, 
-                               data = X_list[[station]],
-                               trace = F)
+  # formula_M1 <- as.formula(paste(station.p, '~', paste(c(colnames(harm_l)[2:ncol(harm_l)]),
+  #                                                     collapse = '+')))
+  # formula_M2 <- as.formula(paste(station.p, '~', paste(
+  #   colnames(X_list[[station]])[15:ncol(X_list[[station]])], collapse = '+'
+  # )))
+  # 
+  # formula_M3 <- as.formula(
+  #   paste(station.p, '~', paste(
+  #     colnames(X_list[[station]])[7:ncol(X_list[[station]])], collapse = '+')
+  #   ))
+  # 
+  # cat('Ajuste modelo M1: ', deparse(formula_M1), '\n')
+  # M1_list[[station]] <- glm(formula = formula_M1, family = Gamma(link = 'log'), 
+  #                           data = X_list[[station]], control = glm.control(maxit = 200))
+  # 
+  # cat('Ajuste modelo M2: ', deparse(formula_M2), '\n')
+  # M2_list[[station]] <- glm(formula = formula_M2, family = Gamma(link = 'log'), 
+  #                           data = X_list[[station]], control = glm.control(maxit = 200))
+  # 
+  # cat('Ajuste modelo M3: ', deparse(formula_M3), '\n')
+  # M3_list[[station]] <- glm(formula = formula_M3, family = Gamma(link = 'log'), 
+  #                           data = X_list[[station]], control = glm.control(maxit = 200))
+  # 
+  # #modelos con CV variante segun armonicos
+  # 
+  # formula_M4 <- formula_M3
+  # 
+  # cat('Ajuste modelo M4: ', deparse(formula_M4), '\n')
+  # M4_list[[station]] <- gamlss(formula_M4, 
+  #                              sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
+  #                              family = GA, 
+  #                              data = X_list[[station]],
+  #                              trace = F)
   
 }
 
@@ -347,9 +355,111 @@ for (station in estaciones){
 rm('M7_list')
 saveRDS(MDQ, 'MDQ.rds')
 
+# M8: selection with the lags included
+M8_list <- list()
+for (station in estaciones){
+  cat('Estación ', station, '\n\n')
+  
+  mod_null <- gamlss(as.formula(paste(paste0(station, '.p'), '~ 1')), 
+                     sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
+                     family = GA, 
+                     data = X.MDQ[[station]],
+                     trace = F)
+  
+  M8_list[[station]] <- step_glm(mod_null, 
+                                 data = X.MDQ[[station]], 
+                                 vars = colnames(X.MDQ[[station]])[14:ncol(X.MDQ[[station]])], 
+                                 harmonics.l)
+  
+}
+for (station in estaciones){
+  MDQ[[station]][['M8']] <- M8_list[[station]]
+  MDQ[[station]][['vars.M8']] <- M8_list[[station]]$mu.coefficients
+}
+rm('M8_list')
+qsave(MDQ, 'MDQ.qs')
+
+# M9: M8 BUT WITH TRANSFORMATIONS
+library(gam)
+deg_list.lag <- list()
+for (station in estaciones){
+  vars <- names(MDQ[[station]]$vars.M8)
+  vars_era5 <- vars[grepl('z', vars)]
+  deg_list.lag[[station]] <- rep(0, times = length(vars_era5))
+  names(deg_list.lag[[station]]) <- vars_era5
+}
+
+for (station in estaciones) {
+  station.p <- paste0(station, '.p')
+  for (var in rev(names(deg_list.lag[[station]]))){
+    plot(gam(formula = as.formula(paste(station.p, '~ s(', var, ')')), data = X.MDQ[[station]]),
+         main = paste(station, var, sep = '-'))
+  }
+  cat("Introduce los valores del vector de grados de la estación", station,
+      '\n', "(separados por espacios, y pulsa Enter al final):\n")
+  vec <- scan(what = numeric(), quiet = TRUE)
+  aux <- names(deg_list.lag[[station]])
+  deg_list.lag[[station]] <- rep(3, times = length(deg_list.lag[[station]]))
+  names(deg_list.lag[[station]]) <- aux
+  dev.off()
+}
+
+
+#degree for the lag variable of rain
+is.lag <- c()
+for (station in estaciones){
+  is.lag[station] <- paste0(station, '.p.lag') %in% names(MDQ[[station]]$vars.M8)
+  cat(paste0(station, '.p.lag') %in% names(MDQ[[station]]$vars.M8), '\n')
+}
+
+for (station in rev(estaciones)){
+  station.p <- paste0(station, '.p')
+  plot(gam(formula = as.formula(paste0(station.p, ' ~ s(', station, '.p.lag)')), 
+           data = X.MDQ[[station]], family = Gamma(link = 'log')), main = station)
+}
+
+deg_lag.new <- c(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 
+             3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
+names(deg_lag.new) <- estaciones
+deg_lag.new[!is.lag] <- 0
+
+M9_list <- list()
+for (station in estaciones){
+  cat('Estación ', station, '\n\n')
+  
+  deg.list <- deg_list.lag[[station]]
+  deg.lag <- deg_lag.new[station]
+  #formula_null <- as.formula(paste0('Y ~ ', paste0('poly(', station, '.p.day, ',deg.day, ')'), '+',
+  #                                  paste0('poly(', station, '.p.lag, ',deg.lag, ')')))
+  
+  mod_null <- gamlss(as.formula(paste(paste0(station, '.p'), '~ 1')), 
+                     sigma.fo = ~ I(sin(2*pi*l/365)) + I(cos(2*pi*l/365)), 
+                     family = GA, 
+                     data = X.MDQ[[station]],
+                     trace = F)
+  
+  aux <- paste0('poly(', names(deg.list)[1], ', ', deg.list[1], ')')
+  for (i in 2:length(deg.list)){
+    aux <- c(aux,  paste0('poly(', names(deg.list)[i], ', ', deg.list[i], ')'))
+  }
+  if(deg.lag == 0){
+    vars <- aux
+  }else{
+    vars <- c(aux, 
+              paste0('poly(', station, '.p.lag, ', deg.lag, ')'))
+  }
+  
+  M6_list[[station]] <- step_glm(mod_null, 
+                                 data = X.MDQ[[station]], 
+                                 vars = vars, 
+                                 harmonics.l)
+  
+}
+
+
 #----model comparison----
-AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 8))
-colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7')
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 10))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
 for (station in estaciones){
@@ -360,10 +470,12 @@ for (station in estaciones){
   M5 <- MDQ[[station]]$M5
   M6 <- MDQ[[station]]$M6
   M7 <- MDQ[[station]]$M7
+  M8 <- MDQ[[station]]$M8
+  M9 <- MDQ[[station]]$M9
   X <- MDQ[[station]]$X
-  AIC.df[station, 2:8] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+  AIC.df[station, 2:10] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
                                   AIC(M4), AIC(M5), AIC(M6),
-                                  AIC(M7)), 2)
+                                  AIC(M7), AIC(M8), AIC(M9)), 2)
   
 }
 

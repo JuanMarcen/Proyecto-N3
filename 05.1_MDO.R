@@ -5,11 +5,14 @@ rm(list = ls())
 load('data.RData')
 
 library(lubridate)
+library(dplyr)
 # In the covariates matrix we add the climate variables
 global_df <- readRDS('global_df.rds')
 global_df$t <- year(global_df$date)
 global_df <- global_df[, -which(colnames(global_df) %in% c('zg300.', 'zg500.', 'zg700.', 
                                                            'zt300.', 'zt500.', 'zt700.'))]
+global_df <- global_df %>%
+  mutate(across(8:ncol(.), ~ lag(.), .names = "{.col}.lag"))
 
 # cálculo de periodo comun
 n <- length(estaciones)
@@ -77,21 +80,27 @@ for (station in estaciones){
   
   formula_M1 <- as.formula(paste('Y ~', paste(c(colnames(harm_l)[2:ncol(harm_l)]),
                                               collapse = '+')))
+  
+  ind.all <-  grep("z", names(X_list[[station]]))
+  ind.lag <- grep("^z.*\\.lag$", names(X_list[[station]]))
+  ind.no.lag <- setdiff(ind.all, ind.lag)
+  p.lag <- which(names(X_list[[station]]) == paste0(station.p, '.lag'))
   formula_M2 <- as.formula(paste('Y ~', paste(
-    colnames(X_list[[station]])[15:ncol(X_list[[station]])], collapse = '+'
+    colnames(X_list[[station]])[c(p.lag, ind.no.lag)], collapse = '+'
   )))
+
   
   formula_M3 <- as.formula(
     paste('Y ~', paste(
-      colnames(X_list[[station]])[7:ncol(X_list[[station]])], collapse = '+')
+      colnames(X_list[[station]])[c(7:15, ind.no.lag)], collapse = '+')
   ))
-  
+
   cat('Ajuste modelo M1: ', deparse(formula_M1), '\n')
   M1_list[[station]] <- glm(formula = formula_M1, family = binomial(logit), data = X_list[[station]])
-  
+
   cat('Ajuste modelo M2: ', deparse(formula_M2), '\n')
   M2_list[[station]] <- glm(formula = formula_M2, family = binomial(logit), data = X_list[[station]])
-  
+
   cat('Ajuste modelo M3: ', deparse(formula_M3), '\n')
   M3_list[[station]] <- glm(formula = formula_M3, family = binomial(logit), data = X_list[[station]])
 }
@@ -165,6 +174,9 @@ step_rlog <- function(initial_model,
   return(mod.aux)
 }
 
+
+# YA LO HEMOS HECHO Y GUARDADO CON LO ANTIGUO, NO ES NECESARIO CAMBIAR NADA,
+# SI QUISIERAMOS VOLVER A LANZAR HASTA EL MODELO m8, HABRÍA QUE FILTRAR SIN LOS LAGS
 M4_list <- list()
 for (station in estaciones[1]){
   cat('Estación: ',station, '\n\n')
@@ -363,6 +375,119 @@ for (station in estaciones){
 rm('M8_list')
 qsave(MDO, 'MDO.qs')
 
+
+# M9: SELECCIÓN CON LOS LAGS
+X.MDO <- qread('X.MDO.qs')
+M9_list <- list()
+for (station in estaciones){
+  cat('Estación: ',station, '\n\n')
+  
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = X.MDO[[station]])
+  
+  M9_list[[station]] <- step_rlog(mod_null,
+                                  X_list[[station]],
+                                  colnames(X_list[[station]])[15:ncol(X)],
+                                  harmonics.l)
+  
+  
+}
+
+for (station in estaciones){
+  MDO[[station]][['M9']] <- M9_list[[station]]
+  MDO[[station]][['vars.M9']] <- M9_list[[station]]$coefficients
+}
+rm('M9_list')
+qsave(MDO, 'MDO.qs')
+
+
+
+
+#M10: ESTUDIAR TRANSFORMACIONES
+# PARA EL LAG ERA DEGREE 3, PERO EN COMMON MODELS LO HEMOS CAMBIADO AL 2
+library(gam)
+deg_list.lag <- list()
+#0 es igual a log
+for (station in estaciones[20]){
+  vars <- names(MDO[[station]]$vars.M9)
+  vars_era5 <- vars[grepl('z', vars)]
+  deg_list.lag[[station]] <- rep(0, times = length(vars_era5))
+  names(deg_list.lag[[station]]) <- vars_era5
+}
+
+for (station in estaciones[20]) {
+  for (var in rev(names(deg_list.lag[[station]]))){
+    plot(gam(formula = as.formula(paste('Y ~ s(', var, ')')), data = X.MDO[[station]],
+             family = binomial),
+         main = paste(station, var, sep = '-'))
+  }
+  cat("Introduce los valores del vector de grados de la estación", station, 
+      '\n', "(separados por espacios, y pulsa Enter al final):\n")
+  vec <- scan(what = numeric(), quiet = TRUE)
+  aux <- names(deg_list.lag[[station]])
+  deg_list.lag[[station]] <- vec
+  names(deg_list.lag[[station]]) <- aux
+  dev.off()
+}
+
+qsave(deg_list.lag, 'deg_list.lag.MDO.qs' )
+
+is.lag <- c()
+for (station in estaciones){
+  is.lag[station] <- paste0(station, '.p.lag') %in% names(MDO[[station]]$vars.M9)
+  cat(paste0(station, '.p.lag') %in% names(MDO[[station]]$vars.M9), '\n')
+}
+
+for (station in rev(estaciones)){
+  station.p <- paste0(station, '.p')
+  plot(gam(formula = as.formula(paste0( 'Y ~ s(', station, '.p.lag)')), 
+           data = X.MDO[[station]], family = binomial), main = station)
+}
+
+#-1 = log
+deg_lag.new <- c(3, 3, 3, 3, 3, 3, 3, 3, -1, 3, 3, 3, 3, 3, 2, 3, 3, 3, -1, 3, -1, 
+                 3, 3, 3, 3, 3, 3, -1 )
+names(deg_lag.new) <- estaciones
+deg_lag.new[!is.lag] <- 0
+
+M10_list <- list()
+for (station in estaciones){
+  cat('Estación ', station, '\n\n')
+  
+  deg.list <- deg_list.lag[[station]]
+  deg.lag <- deg_lag.new[station]
+  #formula_null <- as.formula(paste0('Y ~ ', paste0('poly(', station, '.p.day, ',deg.day, ')'), '+',
+  #                                  paste0('poly(', station, '.p.lag, ',deg.lag, ')')))
+  
+  mod_null <- glm(Y ~ 1, family = binomial(logit), data = X.MDO[[station]])
+  
+  aux <- paste0('poly(', names(deg.list)[1], ', ', deg.list[1], ')')
+  for (i in 2:length(deg.list)){
+    aux <- c(aux,  paste0('poly(', names(deg.list)[i], ', ', deg.list[i], ')'))
+  }
+  if(deg.lag == 0){
+    vars <- aux
+  }else if(deg.lag == -1){
+    vars <- c(aux, paste0('I(log(pmax(', paste0(station, '.p.lag,'), '1e-06)))'))
+  }else{
+    vars <- c(aux, 
+              paste0('poly(', station, '.p.lag, ', deg.lag, ')'))
+  }
+  
+  M10_list[[station]] <- step_rlog(mod_null, 
+                                  data = X.MDO[[station]], 
+                                  vars = vars, 
+                                  harmonics.l)
+  
+}
+
+for (station in estaciones){
+  MDO[[station]][['M10']] <- M10_list[[station]]
+  MDO[[station]][['vars.M10']] <- M10_list[[station]]$coefficients
+}
+rm('M10_list')
+qsave(MDO, 'MDO.qs')
+
+
 #----Comunalidades----
 stations <- readRDS('stations.rds')
 stations.no.ateca <- stations[-nrow(stations), ]
@@ -490,18 +615,21 @@ for (station in estaciones){
 }
 
 #plot all AUC and Roc curves: Comparison of models
-auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
-colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
+auc.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 11))
+colnames(auc.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8',
+                      'M9', 'M10')
 rownames(auc.df) <- estaciones
 auc.df$station <- estaciones
 
-auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
-colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
+auc.df.pc <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 11))
+colnames(auc.df.pc) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8',
+                         'M9', 'M10')
 rownames(auc.df.pc) <- estaciones
 auc.df.pc$station <- estaciones
 
-AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 9))
-colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8')
+AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 11))
+colnames(AIC.df) <- c('station', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8',
+                      'M9', 'M10')
 rownames(AIC.df) <- estaciones
 AIC.df$station <- estaciones
 
@@ -514,7 +642,9 @@ for (station in estaciones){
   M6 <- MDO[[station]]$M6
   M7 <- MDO[[station]]$M7
   M8 <- MDO[[station]]$M8
-  X <- MDO[[station]]$X
+  M9 <- MDO[[station]]$M9
+  M10 <- MDO[[station]]$M10
+  X <- X.MDO[[station]]
   
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = "%Y-%m-%d")
   ind <- which(X$date >= date.first & X$date <= date.last2)
@@ -530,6 +660,8 @@ for (station in estaciones){
   roc_M6 <- roc(X$Y, predict(M6, type = 'response'))
   roc_M7 <- roc(X$Y, predict(M7, type = 'response'))
   roc_M8 <- roc(X$Y, predict(M8, type = 'response'))
+  roc_M9 <- roc(X$Y, predict(M9, type = 'response'))
+  roc_M10 <- roc(X$Y, predict(M10, type = 'response'))
   
   roc_M1.pc <- roc(X$Y[ind], M1$fitted.values[ind])
   roc_M2.pc <- roc(X$Y[ind], M2$fitted.values[ind])
@@ -539,16 +671,21 @@ for (station in estaciones){
   roc_M6.pc <- roc(X$Y[ind], M6$fitted.values[ind])
   roc_M7.pc <- roc(X$Y[ind], M7$fitted.values[ind])
   roc_M8.pc <- roc(X$Y[ind], M8$fitted.values[ind])
+  roc_M9.pc <- roc(X$Y[ind], M9$fitted.values[ind])
+  roc_M10.pc <- roc(X$Y[ind], M10$fitted.values[ind])
   
-  auc.df[station, 2:9] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
+  auc.df[station, 2:11] <- round(c(auc(roc_M1), auc(roc_M2), auc(roc_M3), 
                                   auc(roc_M4), auc(roc_M5), auc(roc_M6), 
-                                  auc(roc_M7), auc(roc_M8)), 3)
-  auc.df.pc[station, 2:9] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
+                                  auc(roc_M7), auc(roc_M8),
+                                  auc(roc_M9), auc(roc_M10)), 3)
+  auc.df.pc[station, 2:11] <- round(c(auc(roc_M1.pc), auc(roc_M2.pc), auc(roc_M3.pc), 
                                      auc(roc_M4.pc), auc(roc_M5.pc), auc(roc_M6.pc), 
-                                     auc(roc_M7.pc), auc(roc_M8.pc)), 3)
-  AIC.df[station, 2:9] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
+                                     auc(roc_M7.pc), auc(roc_M8.pc),
+                                     auc(roc_M9.pc), auc(roc_M10.pc)), 3)
+  AIC.df[station, 2:11] <- round(c(AIC(M1), AIC(M2), AIC(M3), 
                                   AIC(M4), AIC(M5), AIC(M6), 
-                                  AIC(M7), AIC(M8)), 2)
+                                  AIC(M7), AIC(M8),
+                                  AIC(M9), AIC(M10)), 2)
   
 }
 # library(writexl)

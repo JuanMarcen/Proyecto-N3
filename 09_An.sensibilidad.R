@@ -33,7 +33,8 @@ generator.qty.obs <- function(L, shape, rate, n.sim){
 #
 generator.qty.oc <- function(station, data.mq, data.mo, 
                              model.list, model.q, model.o, 
-                             period, n.sim, ocurrence = TRUE){
+                             period, n.sim, ocurrence = TRUE,
+                             years = NULL){
   
   Xo <- data.mo[[station]]
   Xo$date <- as.Date(paste(Xo$t, Xo$mes, Xo$dia.mes, sep = "-"), 
@@ -73,7 +74,15 @@ generator.qty.oc <- function(station, data.mq, data.mo,
   
   # por hecho que hay lag (sino mirar programa 06_generador.R)
   # nuevos mu y sigma necesarios para la primera fecha
-  aux.Xo <- Xo[, names(Xq)]
+  # filtrar por años si el valor es no nulo
+  
+  if (!is.null(years)){
+    ind.year <- which(Xo$t %in% years)
+  }else{
+    ind.year <- nrow(Xo)
+  }
+  aux.Xo <- Xo[ind.year, names(Xq)]
+  
   cat('Dia 1\n')
   cat('mu..')
   mu.new <- suppressWarnings(
@@ -91,13 +100,15 @@ generator.qty.oc <- function(station, data.mq, data.mo,
   
   df.gen <- df.gen %>%
     mutate(
-      prob.p = mo$fitted.values, #fitted values of model MDO(phase2) or dynamically(phase3)
+      prob.p = mo$fitted.values[ind.year], #fitted values of model MDO(phase2) or dynamically(phase3)
       mu.fv = NA,
       sigma.fv = NA,
       shape.fv = NA,
       rate.fv = NA,
       p.day.obs = aux.Xo[[paste0(station, '.p')]]
     )
+  
+  
   
   # parámetros para el día 1 (estos son vectores escalares porque representan "la estructura")
   df.gen[1, c(5:(ncol(df.gen) - 1))] <- c(
@@ -228,6 +239,9 @@ generator.qty.oc <- function(station, data.mq, data.mo,
 }
 
 
+basura <- generator.qty.oc(estaciones[1], X.MHQ, X.MHO, common.models.final,
+                            'MHQ', 'MHO', per.comun.h, n.sim = 100, ocurrence = T,
+                            years = 2015)
 
 basura.sim <- basura[[3]]
 rain.yes <- apply(basura.sim, 2, function(x) sum(x > 0)/nrow(basura.sim))
@@ -336,7 +350,7 @@ df.q(estaciones, X.MDQ, common.models.final, 'MDQ',
 
 
 boxplot.q.sim <- function(station, data, model.list, model, period,
-                          quantiles, n.sim, month = NULL, 
+                          quantiles, n.sim, month = NULL, years = NULL, 
                           seasons = NULL, 
                           generator,
                           plot = FALSE, 
@@ -350,6 +364,11 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
                     format = '%Y-%m-%d')
   X <- X %>% 
     filter(date >= period[1] & date <= period[2])
+  
+  if (!is.null(years)){
+    X <- X %>%
+      filter(t %in% years)
+  }
   
   x.obs <- X[[paste0(station, '.p')]]
   
@@ -400,13 +419,14 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
   
   if (generator == 3){
     y.sim <- generator.qty.oc(station = station,
-                              data.mo = X.MDO,
-                              data.mq = X.MDQ,
+                              data.mo = X.MHO,
+                              data.mq = X.MHQ,
                               model.list = model.list,
-                              model.q = 'MDQ',
-                              model.o = 'MDO',
+                              model.q = 'MHQ',
+                              model.o = 'MHO',
                               period = period,
-                              n.sim = n.sim)
+                              n.sim = n.sim, 
+                              years = years)
     aux.marcador <- which(apply(y.sim, 2, function(x) sum(is.na(x))) > 0)
     if (length(aux.marcador) >= 1){
       y.sim <- y.sim[, -aux.marcador]
@@ -796,17 +816,17 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
 
 set.seed(05052002)
 # par(mfrow= c(2,2))
-basura <- boxplot.q.sim(estaciones[1], X.MDO, common.models.final, 'MDQ', 
-              per.comun.day, 
+basura <- boxplot.q.sim(estaciones[1], X.MHO, common.models.final, 'MHQ', 
+              per.comun.h, 
               quantiles = c(0.05, 0.50, 0.90, 0.95, 0.99),
-              n.sim = 100, month = NULL,
+              n.sim = 100, month = NULL, years = 2015,
               seasons = TRUE,
               generator = 3,
               plot = TRUE, 
               extreme.lag = TRUE,
               n.days = 8, 
               partition.lag = TRUE,
-              top.quarter.z.value = TRUE)
+              top.quarter.z.value = F)
 
 boxplot.q.sim(estaciones[1], X.MDQ, common.models.final, 'MDQ', 
               per.comun.day, 
