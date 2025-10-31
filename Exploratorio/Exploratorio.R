@@ -806,6 +806,11 @@ mapa.ind <- function(stations, data.h, crit.hour, crit.hour.center,
   h <- data.h$h[crit.hour]
   station <- data.map$STAID[which.max(data.map$p.h)]
   
+  aux.df <- data.h[c(crit.hour.center -2, crit.hour.center - 1,
+                     crit.hour.center,
+                     crit.hour.center + 1, crit.hour.center + 2), ]
+  range <- range(aux.df[, paste0(stations$STAID, '.p')], na.rm = T)
+  
   if (calculate.val.min == TRUE){
     values.min <- data.min[which(data.min$date == fecha &
                                    data.min$h == h), paste0(station, '.p')]
@@ -832,8 +837,7 @@ mapa.ind <- function(stations, data.h, crit.hour, crit.hour.center,
     scale_size_continuous(
       name = "Rain (center)",
       range = c(2, 8),
-      limits = c(min(data.map$p.h.center, na.rm = TRUE),
-                 max(data.map$p.h.center, na.rm = TRUE)),
+      limits = range,
       guide = "none"
     ) +
     
@@ -955,6 +959,8 @@ crit.hours.map <- function(stations, period, data.h, data.min, quantile, prop,
     h <- crit.h$h[i]
     i.og <- which(data.h$date == date & data.h$h == h)
     
+    
+    
     plot_i <- mapa.ev(stations, 
                       data.h = data.h, crit.hour = i.og, data.min = data.min,
                       map.base = map.base)
@@ -976,4 +982,39 @@ crit.hours.map <- function(stations, period, data.h, data.min, quantile, prop,
 basura <- crit.hours.map(stations, per.comun.h, df_hours, df_minutes, 0.99, 0.95,
                          map.base = map.base)
 
-mapa.ev(data.h = df_hours, crit.hour = i.og, data.min = data.min)
+plan(sequential)
+
+#medida de similitud --> var regional + sd REGIONAL + COEF VAR (sd / mean)
+# usar el periodo comun de las horas
+period <- per.comun.h
+# calculo de medidas
+data <- df_hours
+#filtar per.comun
+data$date <- as.Date(paste(data$t, data$mes, data$dia.mes, sep = "-"), format = '%Y-%m-%d')
+data <- data %>% filter(date >= period[1] & date <= period[2])
+
+data$var <- apply(data[, paste0(estaciones, '.p')], 1, var, na.rm = T) 
+#var = 0 --> misma lluvia en todas estaciones
+data$CV <- apply(data[, paste0(estaciones, '.p')], 1, 
+                 FUN = function(x) sd(x, na.rm=T) / mean(x, na.rm = T))
+#CV = NaN --> mean = 0 y sd = 0
+
+#filtrado de var > 0 y ver su distribucion
+data.var.gr.0 <- data[data$var > 0 & !is.na(data$var), ]
+data.var.gr.0[which.max(data.var.gr.0[, 'var']), c('date', 'h', paste0(estaciones, '.p'))]
+
+
+# ver la varianza en las horas problematicas (obtenidas anteriormente)
+data.var.crit.h <- data.var.gr.0 %>%
+  semi_join(basura, by = c('date', 'h'))
+boxplot(data.var.gr.0[, 'var'])
+points(rep(1, times = nrow(basura)), data.var.crit.h[['var']], pch = 19, col = 'red')
+abline(h = quantile(data.var.gr.0[['var']], 
+                    probs = seq(0.9, 1, by = 0.01)), 
+       col = 'blue')
+plot(density(data.var.gr.0[, 'var']))
+abline(v = data.var.crit.h[['var']], col = 'blue')
+
+# var y cv
+plot(data.var.gr.0[['CV']], data.var.gr.0[['var']])
+points(data.var.crit.h[['CV']], data.var.crit.h[['var']], pch = 19, col = 'red')

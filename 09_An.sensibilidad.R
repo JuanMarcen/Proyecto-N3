@@ -1201,12 +1201,12 @@ points(1, sum(X$A126.p == 0)/n, pch = 19, col = 'red')
 #poruqe la ocurrencia depende de la lluvia del dia anterior
 # entonces puede influir
 # corrección dentro del horario?
-
+y.sim <- cbind(X$date, y.sim)
 head(cbind(y.sim[y.sim$p.day.sim.1 > 0, c(1,2)], X$A126.p.day[y.sim$p.day.sim.1 > 0]))
 
 #llueve todos días simulados? En teoría si
 sum(X$A126.p.day >0)
-y.sim <- cbind(X$date, y.sim)
+
 colnames(y.sim)[1] <- 'date'
 n.days <- length(unique(y.sim$date))
 
