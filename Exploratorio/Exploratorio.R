@@ -745,92 +745,140 @@ date <- crit.h$date[i]
 h <- crit.h$h[i]
 #match con el df_original
 i.og <- which(df_hours$date == date & df_hours$h == h)
-aux.df <- df_hours[c(i.og - 2, i.og - 1, i.og, i.og + 1, i.og + 2), ]
+
 
 #maps of this days
 load('Mapas/data_mapas.RData')
+library(dplyr)
 library(ggplot2)
 library(st)
 library(sf)
-mapa.ind <- function(data, crit.h){
+library(future.apply)
+plan(multisession)
+map.base <- ggplot(hypsobath) +
+  geom_sf(aes(fill = val_inf), color = NA) +
+  geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
+  coord_sf(xlim = st_coordinates(limits)[,1],
+           ylim = st_coordinates(limits)[,2]) +
+  scale_fill_manual(name = "Elevation", values = pal[c(7, 8:17)],
+                    breaks = levels(hypsobath$val_inf),
+                    guide = 'none') +
+  xlab("Longitude") + ylab("Latitude")
+
+mapa.ind <- function(stations, data.h, crit.hour, crit.hour.center,
+                     map.base,
+                     calculate.val.min = FALSE,
+                     data.min = NULL){
   
-  data.map <- data.frame(cbind(st_coordinates(stations),
-                    stations$STAID, 
-                    t(data[crit.h, paste0(estaciones, '.p')])))
-  names(data.map)[ncol(data.map)] <- 'p.h'
-  data.map$p.h <- as.numeric(data.map$p.h)
-  data.map$X <- as.numeric(data.map$X)
-  data.map$Y <- as.numeric(data.map$Y)
+  data.map <- data.frame(
+    st_coordinates(stations),
+    STAID = stations$STAID,
+    p.h = t(data.h[crit.hour, paste0(estaciones, '.p')]),
+    p.h.center = t(data.h[crit.hour.center, paste0(estaciones, '.p')])
+  )
+  
+  colnames(data.map)[(ncol(data.map) - 1): ncol(data.map)] <- c('p.h', 'p.h.center')
+  
+  # ---- crear columna categórica con las ETIQUETAS (no nombres de color) ----
   data.map <- data.map %>%
-    mutate(color = case_when(
-      p.h >= 0   & p.h < 1   ~ "forestgreen",
-      p.h >= 1   & p.h <= 7.5 ~ "blue",
-      p.h > 7.5              ~ "red",
-      TRUE                   ~ NA_character_  # por si hay valores fuera de rango o NA
+    mutate(cat_ph = case_when(
+      p.h >= 0   & p.h < 1    ~ "Low (0–1)",
+      p.h >= 1   & p.h <= 7.5 ~ "Medium (1–7.5)",
+      p.h > 7.5               ~ "High (>7.5)",
+      TRUE                    ~ NA_character_
     ))
   
-  fecha <- data$date[crit.h]
-  h <- data$h[crit.h]
-  station <- data.map[which(data.map$p.h == max(data.map$p.h, na.rm = T)),3]
+  # forzar orden de niveles de la leyenda (aquí pides High, Medium, Low)
+  data.map$cat_ph <- factor(data.map$cat_ph,
+                            levels = c("High (>7.5)", "Medium (1–7.5)", "Low (0–1)"))
   
-  if (calculate.min.val == TRUE){
-    
+  # 🔧 truco: añadir filas "fantasma" para mantener leyenda completa
+  niveles_faltantes <- setdiff(levels(data.map$cat_ph), unique(data.map$cat_ph))
+  if (length(niveles_faltantes) > 0) {
+    data.fantasma <- data.frame(
+      X = NA, Y = NA, p.h = NA, p.h.center = NA, STAID = NA,
+      cat_ph = factor(niveles_faltantes, levels = levels(data.map$cat_ph))
+    )
+    data.map <- rbind(data.map, data.fantasma)
+  }
+  
+  fecha <- data.h$date[crit.hour]
+  h <- data.h$h[crit.hour]
+  station <- data.map$STAID[which.max(data.map$p.h)]
+  
+  if (calculate.val.min == TRUE){
+    values.min <- data.min[which(data.min$date == fecha &
+                                   data.min$h == h), paste0(station, '.p')]
+  }else{
+    values.min <- NULL
   }
   
   if (!is.null(values.min)){
-    title <- paste0(fecha, '-', h, 'h', ' - ', station, " 15' data: ", values.min)
+    title <- paste0(fecha, '-', h, 'h', '\n', station, ". 15' data: ", 
+                    paste0(values.min, collapse = '-'))
   }else{
-    title <- paste0(fecha, '-', h, 'h', ' - ', station, " 15' data: ")
+    title <- paste0(fecha, '-', h, 'h')
   }
   
-  map_zone <- ggplot(hypsobath) +
-    geom_sf(aes(fill = val_inf), color = NA) +
-    geom_sf(data = rios, color = "#40B6ED", size = 0.5) +
-    coord_sf(xlim = st_coordinates(limits)[,1], 
-             ylim = st_coordinates(limits)[,2]) + 
-    scale_fill_manual(name = "Elevación", values = pal[c(7, 8:17)],
-                      breaks = levels(hypsobath$val_inf),
-                      guide = 'none') +
-    xlab("Longitud") + ylab("Latitud") +
+  map_zone <- map.base +
     
-    # no NA
-    geom_point(aes(x = X, y = Y, 
-                   size = data.map[!is.na(data.map[['p.h']]), 'p.h'], 
-                   color = data.map[!is.na(data.map[['p.h']]), 'color']), 
-               data = data.map[!is.na(data.map[['p.h']]), ]) +
-    scale_size_continuous(name = "Lluvia", 
-                          limits = range(data.map[['p.h']], na.rm = TRUE)) +
-    # NA
-    # geom_point(aes(x = X, y = Y, 
-    #                color = stations$color[is.na(data[[col]])]), 
-    #            data = data[is.na(data[[col]]), ], 
-    #            shape = 4, size = 2, stroke = 1.5) +
+    # usar cat_ph EN aes() directamente
+    geom_point(
+      aes(x = X, y = Y,
+          size = p.h,
+          color = cat_ph),
+      data = data.map
+    ) +
+    scale_size_continuous(
+      name = "Rain (center)",
+      range = c(2, 8),
+      limits = c(min(data.map$p.h.center, na.rm = TRUE),
+                 max(data.map$p.h.center, na.rm = TRUE)),
+      guide = "none"
+    ) +
     
-    ggrepel::geom_label_repel(aes(x = X, y = Y, 
-                                  label = data.map[!is.na(data.map[['p.h']]), 'p.h'], 
-                                  color = data.map[!is.na(data.map[['p.h']]), 'color']), 
-                              size = 3.5,
-                              position = 'identity', label.size = 0.025,
-                              max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
-                              data = data.map[!is.na(data.map[['p.h']]), ],
-                              seed = 23) +
+    # asignar colores a las ETIQUETAS y forzar orden en la leyenda
+    scale_color_manual(
+      name = "Hourly rain",
+      values = c(
+        "High (>7.5)" = "red",
+        "Medium (1–7.5)" = "blue",
+        "Low (0–1)" = "forestgreen"
+      ),
+      breaks = c("High (>7.5)", "Medium (1–7.5)", "Low (0–1)"),
+      drop = FALSE
+    ) +
     
-    scale_color_identity() +
+    ggrepel::geom_label_repel(
+      aes(x = X, y = Y, 
+          label = p.h, 
+          color = cat_ph),   # usar misma variable para color de etiquetas
+      size = 3.5,
+      position = 'identity', label.size = 0.025,
+      max.time = 0.3, max.iter = 20000, max.overlaps = 100,
+      data = data.map,
+      seed = 23
+    ) +
+    
     ggtitle(label = title)
   
   return(map_zone)
 }
 
-mapa.ind(df_hours, i.og)
 
-
-mapa.ev <- function(data, event.no, event.type){
+mapa.ev <- function(stations, data.h, crit.hour, data.min, map.base){
   
-  m1 <- mapa.ind(data, event.no, event.type, '-2h')
-  m2 <- mapa.ind(data, event.no, event.type, '-1h')
-  m3 <- mapa.ind(data, event.no, event.type, '')
-  m4 <- mapa.ind(data, event.no, event.type, '+1h')
-  m5 <- mapa.ind(data, event.no, event.type, '+2h')
+  m1 <- mapa.ind(stations, data.h = data.h, crit.hour = crit.hour - 2,
+                 crit.hour.center = crit.hour, map.base = map.base)
+  m2 <- mapa.ind(stations, data.h = data.h, crit.hour = crit.hour - 1,
+                 crit.hour.center = crit.hour, map.base = map.base)
+  m3 <- mapa.ind(stations, data.h = data.h, crit.hour = crit.hour,
+                 crit.hour.center = crit.hour,
+                 calculate.val.min = T, data.min = data.min, map.base = map.base)
+  m4 <- mapa.ind(stations, data.h = data.h, crit.hour = crit.hour + 1,
+                 crit.hour.center = crit.hour, map.base = map.base)
+  m5 <- mapa.ind(stations, data.h = data.h, crit.hour = crit.hour + 2,
+                 crit.hour.center = crit.hour, map.base = map.base)
   
   mapa <- ggpubr:: ggarrange(m1, m2, m3, m4, m5, 
                              ncol = 5,
@@ -838,3 +886,94 @@ mapa.ev <- function(data, event.no, event.type){
                              legend = 'bottom')
   return(mapa)
 }
+
+
+crit.hours.map <- function(stations, period, data.h, data.min, quantile, prop,
+                           map.base){
+  
+  stations.name <- stations$STAID
+  
+  data.h$date <- as.Date(paste(data.h$t, data.h$mes, data.h$dia.mes, sep = "-"), 
+                         format = '%Y-%m-%d')
+  data.h <- data.h %>% filter(date >= period[1] & date <= period[2])
+  
+  data.min$date <- as.Date(paste(data.min$t, data.min$mes, data.min$dia.mes, sep = "-"), 
+                           format = '%Y-%m-%d')
+  data.min <- data.min %>% filter(date >= period[1] & date <= period[2])
+  
+  # calculo de máximo horario regional
+  cols <- paste0(stations.name, ".p")
+  max.reg <- apply(data.h[, paste0(stations.name, '.p')], 1, max, na.rm = T)
+  data.h$max.reg <- max.reg
+  # guardado de nombres en que estacion
+  data.h$estacion.max <- apply(data.h[, cols], 1, function(x) {
+    if (all(is.na(x))) {
+      return(NA)  # si toda la fila es NA
+    } else {
+      idx <- which.max(x)      # posición del máximo
+      return(stations.name[idx])  # nombre de la estación
+    }
+  })
+  #filtrado para maximos regionales > 0
+  data.h.max.gr.0 <- data.h[data.h$max.reg > 0, ]
+  thresh <- quantile(data.h.max.gr.0[['max.reg']], prob = quantile)
+  #lo que pasan el umbral
+  data.h.above.thresh <- data.h.max.gr.0[data.h.max.gr.0[['max.reg']] > thresh, ]
+  
+  #ver para esos días los datos 15'
+  #fijarse en date y h
+  data.min.above.thresh <- data.min %>%
+    semi_join(data.h.above.thresh, by = c("date", "h"))
+  
+  #funcion o bucle que me devuelva para cada hora si TRUE o no segun la proporcion
+  ind.crit <- c()
+  for (i in 1:nrow(data.h.above.thresh)){
+    value.h <- data.h.above.thresh$max.reg[i]
+    col <- paste0(data.h.above.thresh$estacion.max[i], '.p')
+    date <- data.h.above.thresh$date[i]
+    h <- data.h.above.thresh$h[i]
+    
+    values.min <- data.min.above.thresh %>%
+      filter(date == !!date, h == !!h) %>%
+      pull(!!sym(col))
+    
+    if(sum(values.min/value.h > prop) >= 1){
+      ind.crit[i] <- TRUE
+    }else{
+      ind.crit[i] <- FALSE
+    }
+  }
+  
+  crit.h <- data.h.above.thresh[ind.crit, ]
+  crit.min <- data.min.above.thresh %>%
+    semi_join(crit.h, by = c("date", "h"))
+  
+  cat('We find ', nrow(crit.h), ' possible critical hours')
+  #ahora para cada día crítico pintar en mapa junto a dos horas anteriores y posteriores
+  res_list <- future_lapply(1:nrow(crit.h), function(i) {
+    date <- crit.h$date[i]
+    h <- crit.h$h[i]
+    i.og <- which(data.h$date == date & data.h$h == h)
+    
+    plot_i <- mapa.ev(stations, 
+                      data.h = data.h, crit.hour = i.og, data.min = data.min,
+                      map.base = map.base)
+    
+    ggsave(
+      filename = paste0("Mapas/crit.h/mapa_", i, "_", date, "_", h, "h.png"),
+      plot = plot_i,
+      width = 16*1.75, height = 4*1.75, dpi = 150
+    )
+    
+    return(NULL)
+  })
+  
+  
+  return(crit.h)
+}
+
+
+basura <- crit.hours.map(stations, per.comun.h, df_hours, df_minutes, 0.99, 0.95,
+                         map.base = map.base)
+
+mapa.ev(data.h = df_hours, crit.hour = i.og, data.min = data.min)
