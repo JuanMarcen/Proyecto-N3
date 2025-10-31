@@ -816,7 +816,7 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
 
 set.seed(05052002)
 # par(mfrow= c(2,2))
-basura <- boxplot.q.sim(estaciones[1], X.MHO, common.models.final, 'MHQ', 
+basura <- boxplot.q.sim(estaciones[estaciones == 'A126'], X.MHO, common.models.final, 'MHQ', 
               per.comun.h, 
               quantiles = c(0.05, 0.50, 0.90, 0.95, 0.99),
               n.sim = 100, month = NULL, years = 2015,
@@ -1175,3 +1175,46 @@ prob.gr.obs.top.quarter <- colSums(prob.gr.obs.top.quarter) / (nrow(q.sim.top.qu
 # iguales ?
 prob.gr.obs.top.quarter.2 <- q.sim.top.quarter == q.obs.matrix.top.quarter
 prob.gr.obs.top.quarter.2 <- colSums(prob.gr.obs.top.quarter.2) / (nrow(q.sim.top.quarter))
+
+
+## EXTRA PARA EL HORARIO (AUX.XO YA EJECUTADO DENTRO DEL GENERADOR)
+quantile(aux.Xo[aux.Xo$mes %in% c(9,10,11), 'EM71.p'], probs = 0.99)
+
+
+#---VER SI OCURRENCIA CORRECTO----
+y.sim <- generator.qty.oc('A126', X.MHQ, X.MHO, common.models.final,
+                          'MHQ', 'MHO', per.comun.h, n.sim = 100, ocurrence = T,
+                          years = 2015)
+
+X <- X.MHO[['A126']]
+X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = '-'), 
+                  format = '%Y-%m-%d')
+X <- X %>% 
+  filter(date >= period[1] & date <= period[2] & t == 2015)
+
+
+n <- nrow(y.sim)
+boxplot(apply(y.sim[, -1], 2, function(x) sum(x == 0)/n))
+points(1, sum(X$A126.p == 0)/n, pch = 19, col = 'red')
+
+# puede que no sea bueno por la cntdt no ajustada a la lluvia diaria
+#poruqe la ocurrencia depende de la lluvia del dia anterior
+# entonces puede influir
+# corrección dentro del horario?
+
+head(cbind(y.sim[y.sim$p.day.sim.1 > 0, c(1,2)], X$A126.p.day[y.sim$p.day.sim.1 > 0]))
+
+#llueve todos días simulados? En teoría si
+sum(X$A126.p.day >0)
+y.sim <- cbind(X$date, y.sim)
+colnames(y.sim)[1] <- 'date'
+n.days <- length(unique(y.sim$date))
+
+y.sim.rain <- y.sim %>%
+  group_by(date) %>%
+  summarise(across(1:(ncol(y.sim) - 1), ~ any(.x > 0))) %>%
+  ungroup()
+
+sim.rain <- apply(y.sim.rain[, 2:ncol(y.sim.rain)], 2, sum)
+plot(sim.rain, ylim =c(50, n.days))
+abline(h = n.days, col = 'red')
