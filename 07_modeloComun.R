@@ -52,7 +52,7 @@ mo <- 'M9'
 df.mho <- plot.auc.n.vars('M5', estaciones, MHO)
 # MHO escogido == 19 --> df.comp
 # MHO escogido == 1 --> df.comp.2
-df.mdo <- plot.auc.n.vars('M8', estaciones, MDO)
+df.mdo <- plot.auc.n.vars('M10', estaciones, MDO)
 # MDO escogido == 11
 
 # MODELOS DE CANTIDAD
@@ -215,6 +215,7 @@ for(station in estaciones){
   # common.models[[station]][['MDO.pc']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
   # common.models[[station]][['MDO.pc.2']] <- mod.comun(station, per.comun.day, MDO, 'M7', 11, type = 'log')
   common.models[[station]][['MDO.pc.3']] <- mod.comun(station, per.comun.day, MDO, 'M8', 11, type = 'log')
+  #####common.models[[station]][['MDO.pc.4']] <- mod.comun(station, per.comun.day, MDO, 'M10', 12, type = 'log')
   # common.models[[station]][['MHQ.pc']] <- mod.comun(station, per.comun.h, MHQ, 'M6', 15, type = 'gamma', subtype = 'hour')
   common.models[[station]][['MHQ.pc.2']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 6, type = 'gamma', subtype = 'hour')
   # common.models[[station]][['MHQ.pc.3']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 8, type = 'gamma', subtype = 'hour')
@@ -694,7 +695,7 @@ df.comp$MHQ <- cbind(df.comp$MHQ, df.MHQ.2[, -1])
 df.comp$MHQ <- df.comp$MHQ[, c(1,2,3,4,6,5)]
 colnames(df.comp$MHQ)[5] <- 'AIC.mod.common.4'
 
-df.MDO.3 <- comp.models.2(estaciones, MDO, common.models, per.comun.day, 'MDO.pc.3', AUC = T)
+df.MDO.3 <- comp.models.2(estaciones, MDO, common.models, per.comun.day, 'MDO.pc.4', AUC = T)
 df.comp$MDO <- cbind(df.comp$MDO, df.MDO.3[, -1])
 df.comp$MDO <- df.comp$MDO[, c(1,2,3,8,4,5,6,9,7)] 
 
@@ -958,6 +959,34 @@ for (station in estaciones){
   
 }
 
+
+#----CORRECCIÓN MHO----
+X.MHO <- qread('X.MHO.qs')
+for (station in estaciones){
+  X <- X.MHO[[station]]
+  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = '%Y-%m-%d')
+  X <- X %>% filter(date >= per.comun.h[1] & date <= per.comun.h[2])
+  
+  X <- X %>%
+    mutate(
+      gr.thresh = as.numeric(.data[[paste0(station, '.p.lag')]] >= 2),
+      less.thresh = as.numeric(.data[[paste0(station, '.p.lag')]] < 2)
+    )
+  
+  mod <- common.models.final[[station]]$MHO
+  
+  common.models.final[[station]]$MHO <- update(
+    mod, formula = as.formula(
+      paste0(
+        '.~. - I(', station, '.p.lag < 2):I(log(pmax(', station, 
+        '.p.lag, 1e-06))) - I(', station, '.p.lag >= 2):I(',
+        station, '.p.lag) + less.thresh:I(log(pmax(', station, 
+        '.p.lag, 1e-06))) + gr.thresh:I(', station, '.p.lag)'
+      )
+      ),
+    data = X
+  )
+}
 
 #----analisis de comunalidades----
 # analyisis of CI of coefficients of models (ONLY COMMON MODELS)

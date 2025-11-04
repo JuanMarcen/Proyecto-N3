@@ -1018,3 +1018,7 @@ abline(v = data.var.crit.h[['var']], col = 'blue')
 # var y cv
 plot(data.var.gr.0[['CV']], data.var.gr.0[['var']])
 points(data.var.crit.h[['CV']], data.var.crit.h[['var']], pch = 19, col = 'red')
+
+# CV
+boxplot(data.var.gr.0[, 'CV'])
+points(rep(1, times = nrow(basura)), data.var.crit.h[['CV']], pch = 19, col = 'red')
