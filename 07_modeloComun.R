@@ -102,7 +102,8 @@ library(dplyr)
 library(gamlss)
 #library(logistf)
 mod.comun <- function(station, per.comun, data, mod, chosen, 
-                      type = 'log', subtype = NULL, log_file = "errores_modelo.txt") {
+                      type = 'log', subtype = NULL, log_file = "errores_modelo.txt",
+                      data.used = NULL) {
   
   data_name <- deparse(substitute(data))
   
@@ -121,8 +122,13 @@ mod.comun <- function(station, per.comun, data, mod, chosen,
     cat(line, file = log_file, append = TRUE)
   }
   
+  
   # PREPROCESADO
-  X <- data[[station]]$X
+  if (!is.null(data.used)){
+    X <- data.used[[station]]
+  }else{
+    X <- data[[station]]$X
+  }
   X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), format = '%Y-%m-%d')
   X <- X %>% filter(date >= per.comun[1] & date <= per.comun[2])
   
@@ -209,18 +215,19 @@ mod.comun <- function(station, per.comun, data, mod, chosen,
 common.models <- list()
 for(station in estaciones){
   cat('Estación ', station, '\n')
-  common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
-  common.models[[station]][['MHO.pc.2']] <- mod.comun(station, per.comun.h, MHO, 'M5', 1, type = 'log')
-  common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
+  ##common.models[[station]][['MHO.pc']] <- mod.comun(station, per.comun.h, MHO, 'M5', 19, type = 'log')
+  ##common.models[[station]][['MHO.pc.2']] <- mod.comun(station, per.comun.h, MHO, 'M5', 1, type = 'log')
+  ##common.models[[station]][['MHO.pc.3']] <- mod.comun(station, per.comun.h, MHO, 'M9', 19, type = 'log')
   # common.models[[station]][['MDO.pc']] <- mod.comun(station, per.comun.day, MDO, 'M5', 11, type = 'log')
   # common.models[[station]][['MDO.pc.2']] <- mod.comun(station, per.comun.day, MDO, 'M7', 11, type = 'log')
-  common.models[[station]][['MDO.pc.3']] <- mod.comun(station, per.comun.day, MDO, 'M8', 11, type = 'log')
-  #####common.models[[station]][['MDO.pc.4']] <- mod.comun(station, per.comun.day, MDO, 'M10', 12, type = 'log')
+  ##common.models[[station]][['MDO.pc.3']] <- mod.comun(station, per.comun.day, MDO, 'M8', 11, type = 'log')
+  common.models[[station]][['MDO.pc.4']] <- mod.comun(station, per.comun.day, MDO, 'M10', 19, type = 'log',
+                                                      data.used = X.MDO)
   # common.models[[station]][['MHQ.pc']] <- mod.comun(station, per.comun.h, MHQ, 'M6', 15, type = 'gamma', subtype = 'hour')
-  common.models[[station]][['MHQ.pc.2']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 6, type = 'gamma', subtype = 'hour')
+  ##common.models[[station]][['MHQ.pc.2']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 6, type = 'gamma', subtype = 'hour')
   # common.models[[station]][['MHQ.pc.3']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 8, type = 'gamma', subtype = 'hour')
   # common.models[[station]][['MHQ.pc.4']] <- mod.comun(station, per.comun.h, MHQ, 'M8', 11, type = 'gamma', subtype = 'hour')
-  common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
+  ##common.models[[station]][['MDQ.pc']] <- mod.comun(station, per.comun.day, MDQ, 'M6', 8, type = 'gamma', subtype = 'day')
 }
 
 # DIVERGENT STATIONS
@@ -678,11 +685,11 @@ comp.models.2 <- function(estaciones, mod.type, models.list, period, common, AUC
         roc(X$Y[ind], predict(mod.common, type = 'response'))
       )
       
-      df[i, 'AUC.mod.common.2'] <- auc(roc.mod.common)
+      df[i, 'AUC.mod.common.3'] <- auc(roc.mod.common)
       
     }
     
-    df[i, 'AIC.mod.common.2'] <- AIC(mod.common)
+    df[i, 'AIC.mod.common.3'] <- AIC(mod.common)
   }
   
   
@@ -695,9 +702,9 @@ df.comp$MHQ <- cbind(df.comp$MHQ, df.MHQ.2[, -1])
 df.comp$MHQ <- df.comp$MHQ[, c(1,2,3,4,6,5)]
 colnames(df.comp$MHQ)[5] <- 'AIC.mod.common.4'
 
-df.MDO.3 <- comp.models.2(estaciones, MDO, common.models, per.comun.day, 'MDO.pc.4', AUC = T)
-df.comp$MDO <- cbind(df.comp$MDO, df.MDO.3[, -1])
-df.comp$MDO <- df.comp$MDO[, c(1,2,3,8,4,5,6,9,7)] 
+df.MDO.4 <- comp.models.2(estaciones, MDO, common.models, per.comun.day, 'MDO.pc.4', AUC = T)
+df.comp$MDO <- cbind(df.comp$MDO, df.MDO.4[, -1])
+df.comp$MDO <- df.comp$MDO[, c(1,2,3,4, 10,5,6,7,8,11,9)] 
 
 qsave(df.comp, 'df.comp.qs')
 df.comp <- qread('df.comp.qs')
@@ -949,6 +956,7 @@ for (station in estaciones){
   
   #MDO
   common.models.final[[station]][['MDO']] <- common.models[[station]][['MDO.pc.3']]
+  common.models.final[[station]][['MDO.2']] <- common.models[[station]][['MDO.pc.4']]
   
   #MHQ
   common.models.final[[station]][['MHQ']] <- common.models[[station]][['MHQ.pc.2']]

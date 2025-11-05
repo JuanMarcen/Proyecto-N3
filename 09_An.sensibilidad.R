@@ -6,7 +6,7 @@ rm(list = setdiff(ls(), c('common.models.final', 'MDQ', 'MHQ', 'X.MDQ',
 library(qs)
 X.MDQ <- qread('X.MDQ.qs')
 X.MHQ <- qread('X.MHQ.qs')
-#X.MDO <- qread('X.MDO.qs')
+X.MDO <- qread('X.MDO.qs')
 X.MHO <- qread('X.MHO.qs')
 
 load('data.RData')
@@ -1207,6 +1207,9 @@ cs <- function(t,harmonics=1, total) {
 global_df <- readRDS('global_df.rds')
 global_df <- global_df[, -which(colnames(global_df) %in% c('zg300.', 'zg500.', 'zg700.', 
                                                            'zt300.', 'zt500.', 'zt700.'))]
+#lags 
+global_df <- global_df %>%
+  mutate(across(8:ncol(.), ~ lag(.), .names = "{.col}.lag"))
 
 standardization <- function(x, sum.to, correction = FALSE){
   if (correction == FALSE){
@@ -1643,7 +1646,8 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
     }else{
       ind.year <- nrow(data.day)
     }
-    aux.data.day <- data.day[ind.year, ]
+    #adicion del ultima dia del año pasado
+    aux.data.day <- data.day[c(ind.year[1] - 1, ind.year), ]
     
     # INICIO DE LA SIMULACION
     # MATRIZ DE SIMULACIONES
@@ -1651,17 +1655,13 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
     sim_matrix <- matrix(NA_real_, nrow = n_days, ncol = n.sim)
     colnames(sim_matrix) <- paste0("p.day.sim.", 1:n.sim)
     
-    # relleno de 0's para días sin lluvia observada
-    ind.no.rain <- is.element(aux.data.day[[paste0(station.p)]], 0)
-    sim_matrix[ind.no.rain, ] <- 0
-    # dias que llueve
-    n.days.rain <- sum(!ind.no.rain)
-    
+    # primera fecha (año anterior) lo que se ha simulado (en este caso observado)
+    sim_matrix[1, ] <- rep(aux.data.day[1, paste0(station, '.p')], times = n.sim)
     # Umbral para considerar un valor "absurdo" — aquí uso el percentil 0.999 histórico
     umbral <- max(aux.data.day[[paste0(station, '.p')]], na.rm = T)
     
     # hourly simulation for days with rain
-    for (i in 1:n.days.rain){
+    for (i in 1:365){
       # la matriz se va a ir acutalizando. 
       # primera hora del primer dia con lluvia observada
       aux <- apply(sim_matrix, 1, function(row) all(is.na(row)))
@@ -1678,11 +1678,6 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
       cat('Día', i)
       
       
-      if (length(active_sims) == 0) {
-        cat("No quedan simulaciones activas en la hora ", i, ". Terminando.\n")
-        break
-      }
-      
       # Preparamos aux con una fila repetida por cada simulación activa
       aux <- aux.data.day[first.day, , drop = FALSE]
       aux <- aux[rep(1, n.sim), , drop = FALSE]
@@ -1696,21 +1691,16 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
       if (length(bad_idx_rel) > 0) {
         # Mapear a índices absolutos en el conjunto original de simulaciones
         bad_idx_abs <- active_sims[bad_idx_rel]
-        cat("  ⚠️ Detectadas simulaciones inválidas en hora ", i - first.hour - 1, ": ",
+        cat("  ⚠️ Detectadas simulaciones inválidas en dia ", i - 1, ": ",
             paste0(bad_idx_abs, collapse = ", "), " -> lag = umbral\n")
         # lag.values pasa a ser el umbral en aquellos que lo supera 
         #(aunque el df orignial aparezca el valor simulado)
         lag_values[bad_idx_abs] <- umbral
         # sim_matrix[i - 1, bad_idx_abs] <- NA_real_
         # Eliminamos esas simulaciones de active_sims para que no se usen como lag en adelante
-        active_sims <- setdiff(active_sims, bad_idx_abs)
+        # active_sims <- setdiff(active_sims, bad_idx_abs)
       }
       
-      # Si tras eliminar no queda ninguna simulación válida, salimos
-      if (length(active_sims) == 0) {
-        cat("No quedan simulaciones activas tras depuración en día ", i, ". Terminando.\n")
-        break
-      }
       
       # Reconstruir aux con la nueva longitud de simulaciones activas
       # en el caso de poner el umbral en el lag, simepre voy a tener el numero de simulaciones
@@ -1763,7 +1753,7 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
     } # end for days
     
     # Convertir sim_matrix en data.frame con nombres adecuados y añadir a df.gen
-    sim_df <- as.data.frame(sim_matrix)
+    sim_df <- as.data.frame(sim_matrix[-1, ]) #elimino primera fila que no es del año en cuestion
     names(sim_df) <- paste0("y.sim.", 1:n.sim)
     
     cat(length(active_sims), ' han sobrevivido a la simulación')
@@ -2873,7 +2863,8 @@ RAIN.GENERATOR.exp.2 <- function(station, data.h, data.day, period,
   
   return(sim_df)
 }
-#---ANÁLISIS OCURRENCIA GENERADORES----
+#---SIMULACIONES HORARIAS----
+y.sim.list <- qread('hourly.simulations.qs')
 set.seed(05052002)
 y.sim.og.cor <- RAIN.GENERATOR.og('A126', df_hours, df_days, per.comun.h, 
                           common.models.final, X.MHQ, 'MHO', 'MHQ',
@@ -2928,13 +2919,178 @@ hourly.simulations <- list(
   y.sim.exp.3.cor = y.sim.exp.3.cor
 )
 qsave(hourly.simulations, 'hourly.simulations.qs')
-#--
+
+#--- SIMULACIONES DIARIAS----
+# phase 1: in observed/used data
+ph1.mdo <- function(station, models.list, mo, years = NULL, n.sim = 100){
+  mdo <- models.list[[station]][[mo]]
+  X <- mdo$data
+  if (!is.null(years)){
+    X <- X %>% filter(t %in% years)
+  }
+  #fitted values of the model
+  p <- predict(mdo, newdata = X, type = 'response')
+  
+  #uniform if it rains or not with probabilites the fitted ones
+  mean.sims <- replicate(n.sim, sum(rbinom(length(p), size = 1, prob = p)))
+  
+  boxplot(mean.sims , 
+          main = paste('MDO:', station),
+          ylab = 'Days with rain')
+  points(sum(X$Y), pch = 19, col = 'red', cex = 1.5)
+  
+}
 set.seed(05052002)
-basura <- RAIN.GENERATOR('A126', df_hours, df_days, per.comun.day, 
+ph1.mdo('A126', common.models.final, 'MDO.2', years = 2015)
+
+ph1.mdq <- function(station, models.list, mq, data.mq,
+                    period, years = NULL, n.sim = 100){
+  Xq <- data.mq[[station]]
+  Xq$date <- as.Date(paste(Xq$t, Xq$mes, Xq$dia.mes, sep = "-"),
+                     format = '%Y-%m-%d')
+  Xq <- Xq %>% filter(date >= period[1] & date <= period[2])
+  Xq <- Xq[, -ncol(Xq)]
+  if (!is.null(years)){
+    X.filt <- Xq %>% filter(t == 2015)
+  }else{
+    X.filt <- Xq
+  }
+  
+  mq <- models.list[[station]][[mq]]
+  
+  # formulas rewritten for new dataframe
+  aux.mu.formula <- mq$mu.formula
+  aux.mu.formula <- as.formula(
+    paste(as.character(aux.mu.formula[2]), '~', 
+          paste(labels(terms(aux.mu.formula)), collapse = '+'))
+  )
+  
+  aux.sigma.formula <- mq$sigma.formula
+  aux.sigma.formula <- as.formula(
+    paste('~', as.character(aux.sigma.formula[2]))
+  )
+  
+  
+  mu.form <- sanitize_formula(aux.mu.formula)
+  sigma.form <- sanitize_formula(aux.sigma.formula)
+  
+  #re ajuste modelo cantidad (debido a las nuevas formulas)
+  mq2 <- gamlss(mu.form, sigma.fo = sigma.form,
+                family = GA, data = Xq, trace = FALSE)
+  
+  
+  mu.fv <- predict(mq2, newdata = X.filt, what = 'mu', type = 'response',
+                   data = Xq)
+  sigma.fv <- predict(mq2, newdata = X.filt, what = 'sigma', type = 'response',
+                      data = Xq)
+  
+  shape.fv <- 1 / sigma.fv ^2
+  rate.fv <- shape.fv / mu.fv
+  
+  y.sim <- replicate(n.sim, rgamma(length(mu.fv), shape = shape.fv, rate = rate.fv))
+  colnames(y.sim) <- paste0('y.sim.', 1:n.sim)
+  
+  return(as.data.frame(y.sim))
+}
+set.seed(05052002)
+y.sim.ph1.mdq <- ph1.mdq('A126', common.models.final, 'MDQ', X.MDQ, per.comun.day, 
+                  years = 2015)
+
+# boxplots de los datos
+ph1.boxplots <- function(station, data.mq, period, years = NULL, months = NULL,
+                         quantiles = c(0.05, 0.5, 0.9, 0.95, 0.99),
+                         y.sim){
+  Xq <- data.mq[[station]]
+  Xq$date <- as.Date(paste(Xq$t, Xq$mes, Xq$dia.mes, sep = "-"),
+                     format = '%Y-%m-%d')
+  Xq <- Xq %>% filter(date >= period[1] & date <= period[2])
+  Xq <- Xq[, -ncol(Xq)]
+  if (!is.null(years)){
+    X.filt <- Xq %>% filter(t == 2015)
+  }else{
+    X.filt <- Xq
+  }
+  
+  if (!is.null(months)){
+    ind <- which(X.filt$mes %in% months)
+  }else{
+    ind <- 1:nrow(X.filt)
+  }
+  
+  x.obs <- X.filt[ind, paste0(station, '.p')]
+  
+  q.obs <- quantile(x.obs, probs = quantiles)
+  names.q <- paste0('q.', quantiles)
+  
+  q.sim <- t(apply(y.sim[ind, ], 2, quantile, probs = quantiles))
+  
+  boxplot(q.sim,
+          at = q.obs,               
+          names = paste0(quantiles, '.obs'),  
+          xlim = c(q.obs[1]-0.5, q.obs[5]+0.5),
+          ylim = c(0, max(q.sim)),
+          col = "lightblue",
+          main = paste('MDQ', years),
+          ylab = "Simulated values",
+          xlab = "Observed quantiles")
+  lines(q.obs, q.obs, col = "red", pch = 19, cex = 1.3, type = 'b')
+  
+  q.obs.matrix <- matrix(q.obs, nrow = nrow(q.sim), ncol = length(quantiles), byrow = T)
+  prob.gr.obs <- q.sim > q.obs.matrix
+  prob.gr.obs <- colSums(prob.gr.obs) / (nrow(q.sim))
+  
+  df <- data.frame(matrix(prob.gr.obs, ncol = length(quantiles), byrow = T))
+  
+  return(df)
+  
+}
+
+ph1.prob <- ph1.boxplots('A126', X.MDQ, per.comun.day, 
+                         years = 2015, months = c(3, 4, 5),
+                         y.sim = y.sim.ph1.mdq)
+ks.test(ph1.prob, 'punif', 0, 1)
+
+# PHASE 2: simulate in whole year
+set.seed(05052002)
+y.sim.day <- RAIN.GENERATOR.og('A126', df_hours, df_days, per.comun.day, 
                            common.models.final, X.MDQ, 'MDO', 'MDQ',
                            ocurrence = TRUE, years = 2015,
                            type = 'day')
 
+set.seed(05052002)
+y.sim.day.exp.1 <- RAIN.GENERATOR.og('A126', df_hours, df_days, per.comun.day, 
+                               common.models.final, X.MDQ, 'MDO.2', 'MDQ',
+                               ocurrence = TRUE, years = 2015,
+                               type = 'day')
+
+
+
+# analysis of effects for another MDQ
+m <- common.models.final[['A126']][['MDO.2']]
+summary(m)
+library(gam)
+X <- X.MHQ[['A126']]
+
+X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"),
+                  format = '%Y-%m-%d')
+X <- X %>% filter(date >= per.comun.h[1] & date <= per.comun.h[2])
+
+plot(gam(formula = A126.p ~ s(A126.p.lag), data = X, family = Gamma(link = 'log')))
+abline(v = 8)
+
+#new model
+common.models.final[['A126']][['MHQ.2']] <- update(m, formula = .~. - poly(A126.p.lag, 2) +
+                                                     I(A126.p.lag >= 8):I(A126.p.lag) +
+                                                     I(A126.p.lag < 8):I(log(pmax(A126.p.lag, 1e-06))), 
+                                                   what = 'mu')
+
+set.seed(05052002)
+y.sim.exp.3.cor <- RAIN.GENERATOR.og('A126', df_hours, df_days, per.comun.h, 
+                                     common.models.final, X.MHQ, 'MHO', 'MHQ.2',
+                                     ocurrence = TRUE, years = 2015,
+                                     type = 'hour')
+
+#----ANÁLISIS OCURRENCIA----
 ocurrence.analysis <- function(type, station, data.h, data.day, 
                                period, years, y.sim){
   if (type == 'hour'){
@@ -2981,7 +3137,7 @@ ocurrence.analysis <- function(type, station, data.h, data.day,
     
   }else if (type == 'day'){
     station.p <- paste0(station, '.p')
-    X <- data.h[, c('t', 'l', 'mes', 'dia.mes', paste0(station, '.p'))]
+    X <- data.day[, c('t', 'l', 'mes', 'dia.mes', paste0(station, '.p'))]
     
     X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), 
                       format = '%Y-%m-%d')
@@ -3000,11 +3156,11 @@ ocurrence.analysis <- function(type, station, data.h, data.day,
 
 ocurrence.analysis(type = 'hour', station = 'A126', data.h = df_hours,
                    data.day = df_days, period = per.comun.h, years = 2015,
-                   y.sim = y.sim.exp.3.cor)
+                   y.sim = y.sim.list$y.sim.og.cor)
 
 ocurrence.analysis(type = 'day', station = 'A126', data.h = df_hours,
                    data.day = df_days, period = per.comun.day, years = 2015,
-                   y.sim = basura)
+                   y.sim = y.sim.day.exp.1)
 
 
 #extr
@@ -3031,108 +3187,250 @@ plot(aux.x, 0.46089* log(aux.x), type = 'l')
 
 plot(gam(formula = m$mu.formula, data = X))
 
-#----ANÁLISIS GENERADOR HORARIO----
+#----ANÁLISIS GENERADOR CANTIDAD----
 station <- 'A126'
 
-boxplot.q.sim <- function(station, data.mo, data.h, period, 
+boxplot.q.sim <- function(station, data.mo, data.h, data.day, period, 
                           years = NULL, months = NULL, seasons = NULL,
                           y.sim, 
                           quantiles = c(0.05, 0.50, 0.90, 0.95, 0.99),
-                          plot = TRUE){
+                          plot = TRUE,
+                          type){
   #datos donde se ajusta el model, i.e, dias de lluvia
-  X <- data.mo[[station]]
-  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = '-'), 
-                    format = '%Y-%m-%d')
-  X <- X %>% 
-    filter(date >= period[1] & date <= period[2])
-  
-  data.h$date <- as.Date(paste(data.h$t, data.h$mes, data.h$dia.mes, sep = "-"), 
-                         format = '%Y-%m-%d')
-  data.h <- data.h %>% filter(date >= period[1] & date <= period[2])
-  
-  if (!is.null(years)){
-    X <- X %>%
-      filter(t %in% years)
-    data.h <- data.h %>%
-      filter(t %in% years)
-  }
-  
-  x.obs <- X[[paste0(station, '.p')]]
-  
-  #obtencion del subset de simulaciones con lluvias
-  aux.ind <- which(data.h$date %in% unique(X$date))
-  y.sim.rain <- y.sim[aux.ind, ]
-  # ahora X y y.sim.rain tiene misma longitud
-  
-  if (!is.null(seasons)){
-    ind.list <- list(
-      ind = 1:dim(X)[1],
-      ind.jja = which(X$mes %in% c(6, 7, 8)),
-      ind.son = which(X$mes %in% c(9, 10, 11)),
-      ind.djf = which(X$mes %in% c(12, 1, 2)),
-      ind.mam = which(X$mes %in% c(3, 4, 5))
-    )
+  if (type == 'hour'){
+    X <- data.mo[[station]]
+    X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = '-'), 
+                      format = '%Y-%m-%d')
+    X <- X %>% 
+      filter(date >= period[1] & date <= period[2])
     
-  }else if (!is.null(month)){
-    ind.list <- list(ind = which(X$mes %in% month))
-  }else{
-    ind.list <- list(ind = 1:dim(X)[1])
-  }
-  
-  names.q <- paste0('q.', quantiles)
-  
-  season.names <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
-  
-  i <- 1
-  for (indx in ind.list){
-    x.obs.indx <- x.obs[indx]
-    q.obs <- quantile(x.obs.indx[x.obs.indx > 0], probs = quantiles)
-    names(q.obs) <- names.q
-    #quantiles of simulation
-    y.sim.indx <- y.sim.rain[indx, ]
-    #q.sim <- t(apply(y.sim[indx, ], 2, quantile, probs = quantiles, na.rm = T))
-    q.sim <- t(apply(y.sim.indx, 2, function(col) {
-      pos <- col[col > 0]
-      if (length(pos) > 0) {
-        quantile(pos, probs = quantiles, na.rm = TRUE)
-      } else {
-        rep(NA, length(quantiles))  # si no hay positivos, devolvemos NAs
-      }
-    }))
-    if (plot == TRUE){
-      if (!is.null(seasons)){
-        title <- paste0("Simulated quantiles vs obs. quantiles ", 
-                        station, '-', 'MHQ', 
-                        ' ', season.names[i])
-      }
-      else if (!is.null(month)){
-        title <- paste0("Simulated quantiles vs obs. quantiles ", 
-                        station, '-', 'MHQ', 
-                        ' (months ', paste0(month, collapse = '-'), ')')
-      }
-      else{
-        title <- paste0("Simulated quantiles vs obs. quantiles ", 
-                        station, '-', 'MHQ')
-      }
-      boxplot(q.sim,
-              at = q.obs,               
-              names = paste0(quantiles, '.obs'),  
-              xlim = c(q.obs[1]-0.5, q.obs[5]+0.5),
-              ylim = c(0, max(q.sim)),
-              col = "lightblue",
-              main = title,
-              ylab = "Simulated values",
-              xlab = "Observed quantiles")
-      lines(q.obs, q.obs, col = "red", pch = 19, cex = 1.3, type = 'b')
-      i <- i + 1
+    data.h$date <- as.Date(paste(data.h$t, data.h$mes, data.h$dia.mes, sep = "-"), 
+                           format = '%Y-%m-%d')
+    data.h <- data.h %>% filter(date >= period[1] & date <= period[2])
+    
+    if (!is.null(years)){
+      X <- X %>%
+        filter(t %in% years)
+      data.h <- data.h %>%
+        filter(t %in% years)
     }
+    
+    x.obs <- X[[paste0(station, '.p')]]
+    
+    #obtencion del subset de simulaciones con lluvias
+    aux.ind <- which(data.h$date %in% unique(X$date))
+    y.sim.rain <- y.sim[aux.ind, ]
+    # ahora X y y.sim.rain tiene misma longitud
+    
+    if (!is.null(seasons)){
+      ind.list <- list(
+        ind = 1:dim(X)[1],
+        ind.jja = which(X$mes %in% c(6, 7, 8)),
+        ind.son = which(X$mes %in% c(9, 10, 11)),
+        ind.djf = which(X$mes %in% c(12, 1, 2)),
+        ind.mam = which(X$mes %in% c(3, 4, 5))
+      )
+      
+    }else if (!is.null(month)){
+      ind.list <- list(ind = which(X$mes %in% month))
+    }else{
+      ind.list <- list(ind = 1:dim(X)[1])
+    }
+    
+    names.q <- paste0('q.', quantiles)
+    
+    season.names <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+    
+    aux <- c()
+    i <- 1
+    for (indx in ind.list){
+      x.obs.indx <- x.obs[indx]
+      q.obs <- quantile(x.obs.indx[x.obs.indx > 0], probs = quantiles)
+      names(q.obs) <- names.q
+      #quantiles of simulation
+      y.sim.indx <- y.sim.rain[indx, ]
+      #q.sim <- t(apply(y.sim[indx, ], 2, quantile, probs = quantiles, na.rm = T))
+      q.sim <- t(apply(y.sim.indx, 2, function(col) {
+        pos <- col[col > 0]
+        if (length(pos) > 0) {
+          quantile(pos, probs = quantiles, na.rm = TRUE)
+        } else {
+          rep(NA, length(quantiles))  # si no hay positivos, devolvemos NAs
+        }
+      }))
+      if (plot == TRUE){
+        if (!is.null(seasons)){
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', 'MHQ', 
+                          ' ', season.names[i])
+        }
+        else if (!is.null(month)){
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', 'MHQ', 
+                          ' (months ', paste0(month, collapse = '-'), ')')
+        }
+        else{
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', 'MHQ')
+        }
+        boxplot(q.sim,
+                at = q.obs,               
+                names = paste0(quantiles, '.obs'),  
+                xlim = c(q.obs[1]-0.5, q.obs[5]+0.5),
+                ylim = c(0, max(q.sim)),
+                col = "lightblue",
+                main = title,
+                ylab = "Simulated values",
+                xlab = "Observed quantiles")
+        lines(q.obs, q.obs, col = "red", pch = 19, cex = 1.3, type = 'b')
+        i <- i + 1
+      }
+      
+      q.obs.matrix <- matrix(q.obs, nrow = nrow(q.sim), ncol = length(quantiles), byrow = T)
+      prob.gr.obs <- q.sim > q.obs.matrix
+      prob.gr.obs <- colSums(prob.gr.obs) / (nrow(q.sim))
+      
+      aux <- c(aux, prob.gr.obs) #here it ends
+      
+    }
+    df <- data.frame(matrix(aux, ncol = length(quantiles), byrow = T))
+    if(!is.null(seasons)){
+      rownames(df) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+    }
+    colnames(df) <- names.q
+  }else if(type == 'day'){
+    X <- data.mo[[station]]
+    X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = '-'), 
+                      format = '%Y-%m-%d')
+    X <- X %>% 
+      filter(date >= period[1] & date <= period[2])
+    
+    data.day$date <- as.Date(paste(data.day$t, data.day$mes, data.day$dia.mes, sep = "-"), 
+                           format = '%Y-%m-%d')
+    data.day <- data.day %>% filter(date >= period[1] & date <= period[2])
+    
+    if (!is.null(years)){
+      X <- X %>%
+        filter(t %in% years)
+      data.day <- data.day %>%
+        filter(t %in% years)
+    }
+    
+    x.obs <- X[[paste0(station, '.p')]]
+    
+    #obtencion del subset de simulaciones con lluvias
+    aux.ind <- which(data.day$date %in% unique(X$date))
+    y.sim.rain <- y.sim[aux.ind, ]
+    # ahora X y y.sim.rain tiene misma longitud
+    
+    if (!is.null(seasons)){
+      ind.list <- list(
+        ind = 1:dim(X)[1],
+        ind.jja = which(X$mes %in% c(6, 7, 8)),
+        ind.son = which(X$mes %in% c(9, 10, 11)),
+        ind.djf = which(X$mes %in% c(12, 1, 2)),
+        ind.mam = which(X$mes %in% c(3, 4, 5))
+      )
+      
+    }else if (!is.null(month)){
+      ind.list <- list(ind = which(X$mes %in% month))
+    }else{
+      ind.list <- list(ind = 1:dim(X)[1])
+    }
+    
+    names.q <- paste0('q.', quantiles)
+    
+    season.names <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+    
+    aux <- c()
+    i <- 1
+    for (indx in ind.list){
+      x.obs.indx <- x.obs[indx]
+      q.obs <- quantile(x.obs.indx[x.obs.indx > 0], probs = quantiles)
+      names(q.obs) <- names.q
+      #quantiles of simulation
+      y.sim.indx <- y.sim.rain[indx, ]
+      #q.sim <- t(apply(y.sim[indx, ], 2, quantile, probs = quantiles, na.rm = T))
+      q.sim <- t(apply(y.sim.indx, 2, function(col) {
+        pos <- col[col > 0]
+        if (length(pos) > 0) {
+          quantile(pos, probs = quantiles, na.rm = TRUE)
+        } else {
+          rep(NA, length(quantiles))  # si no hay positivos, devolvemos NAs
+        }
+      }))
+      if (plot == TRUE){
+        if (!is.null(seasons)){
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', 'MHQ', 
+                          ' ', season.names[i])
+        }
+        else if (!is.null(month)){
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', 'MHQ', 
+                          ' (months ', paste0(month, collapse = '-'), ')')
+        }
+        else{
+          title <- paste0("Simulated quantiles vs obs. quantiles ", 
+                          station, '-', 'MHQ')
+        }
+        boxplot(q.sim,
+                at = q.obs,               
+                names = paste0(quantiles, '.obs'),  
+                xlim = c(q.obs[1]-0.5, q.obs[5]+0.5),
+                ylim = c(0, max(q.sim)),
+                col = "lightblue",
+                main = title,
+                ylab = "Simulated values",
+                xlab = "Observed quantiles")
+        lines(q.obs, q.obs, col = "red", pch = 19, cex = 1.3, type = 'b')
+        i <- i + 1
+      }
+      
+      q.obs.matrix <- matrix(q.obs, nrow = nrow(q.sim), ncol = length(quantiles), byrow = T)
+      prob.gr.obs <- q.sim > q.obs.matrix
+      prob.gr.obs <- colSums(prob.gr.obs) / (nrow(q.sim))
+      
+      aux <- c(aux, prob.gr.obs) #here it ends
+      
+    }
+    df <- data.frame(matrix(aux, ncol = length(quantiles), byrow = T))
+    if(!is.null(seasons)){
+      rownames(df) <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+    }
+    colnames(df) <- names.q
+  }else{
+    stop('Type invalid. Use hour or day.')
   }
+  
+  return(df)
 }
 
-boxplot.q.sim('A126', X.MHO, df_hours, per.comun.h,
-              years = 2015, seasons = T, y.sim = y.sim.exp.3.cor, plot = T)
+basura <- boxplot.q.sim(station = 'A126', 
+                        data.mo = X.MHO, 
+                        data.h = df_hours,
+                        data.day = df_days,
+                        period = per.comun.h,
+                        years = 2015, 
+                        seasons = T, 
+                        y.sim = y.sim.list$y.sim.og.cor, 
+                        plot = T,
+                        type = 'hour')
+
+basura <- boxplot.q.sim(station = 'A126', 
+                        data.mo = X.MDO, 
+                        data.h = df_hours,
+                        data.day = df_days,
+                        period = per.comun.day,
+                        years = 2015, 
+                        seasons = T, 
+                        y.sim = y.sim.day.exp.1, 
+                        plot = T,
+                        type = 'day')
 
 
+density(basura)
+ks.test(unique(unlist(basura)), 'punif', 0, 1)
 #comparación de máximos y quantiles
 library(ggplot2)
 library(dplyr)
@@ -3217,10 +3515,12 @@ num.comparison('quantile',
                X, var = 'A126.p',
                quantile = 0.9)
 
+
+
 basura <- t(apply(y.sim.og.cor, 2, function(col) {
   pos <- col[col > 0]
   if (length(pos) > 0) {
-    quantile(pos, probs = 0.9, na.rm = TRUE)
+    quantile(pos, probs = 0.05, na.rm = TRUE)
   } else {
     rep(NA, length(1))  # si no hay positivos, devolvemos NAs
   }
@@ -3229,11 +3529,11 @@ boxplot(t(basura))
 points(1, quantile(X[['A126.p']][X[['A126.p']] > 0], probs = 0.90), col = 'red', pch = 19)
 
 # Cantidades más aplatanadas?
-X <- X.MHO[[station]]
+X <- X.MDO[[station]]
 X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = '-'), 
                   format = '%Y-%m-%d')
 X <- X %>% 
-  filter(date >= per.comun.h[1] & date <= per.comun.h[2])
+  filter(date >= per.comun.day[1] & date <= per.comun.day[2])
 
 df_hours$date <- as.Date(paste(df_hours$t, df_hours$mes, df_hours$dia.mes, sep = "-"), 
                        format = '%Y-%m-%d')
@@ -3252,5 +3552,22 @@ x.obs <- X[[paste0(station, '.p')]]
 aux.ind <- which(data.h$date %in% unique(X$date))
 y.sim.rain <- y.sim[aux.ind, ]
 
+y.sim.1 <- y.sim.day[, 37]
 
-plot(1:length(x.obs), x.obs, col = 'black')
+par(mfrow = c(2,2))
+plot(1:91, x.obs[1:91], col = 'black', type = 'b', pch = 19)
+lines(1:91, y.sim.1[1:91], col = 'red', type = 'b', pch = 19)
+plot(92:183, x.obs[92:183], col = 'black', type = 'b', pch = 19)
+lines(92:183, y.sim.1[92:183], col = 'red', type = 'b', pch = 19)
+plot(184:275, x.obs[184:275], col = 'black', type = 'b', pch = 19)
+lines(184:275, y.sim.1[184:275], col = 'red', type = 'b', pch = 19)
+plot(276:365, x.obs[276:365], col = 'black', type = 'b', pch = 19)
+lines(276:365, y.sim.1[276:365], col = 'red', type = 'b', pch = 19)
+
+
+
+
+# BRIER SOCRE?
+install.packages("DescTools")
+library(DescTools)
+BrierScore(common.models.final[['A126']][['MDO.2']])
