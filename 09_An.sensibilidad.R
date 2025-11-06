@@ -3516,7 +3516,7 @@ basura <- boxplot.q.sim(station = 'A126',
                         period = per.comun.day,
                         years = NULL, 
                         seasons = T, 
-                        y.sim = y.sim.day.all, 
+                        y.sim = y.sim.day.exp.1.all, 
                         plot = T,
                         type = 'day')
 
