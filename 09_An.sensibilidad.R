@@ -3339,11 +3339,10 @@ X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"),
 X <- X %>% filter(date >= per.comun.day[1] & date <= per.comun.day[2])
 
 plot(gam(formula = Y ~ s(A126.p.lag), data = X, family = binomial))
-abline(v = 8)
+abline(v = 9)
 
-aux.x <- -20:15
-poly.aux <- poly(aux.x, 3)
-plot(aux.x, 79.38498 * poly.aux[, 1] - -12.35477 * poly.aux[, 2] + 17.26444 * poly.aux[, 3], type = 'l')
+aux.x <- 9:40
+plot(aux.x, log(aux.x[aux.x >= 9])*-3.118e-01  -02 + aux.x[aux.x >= 9]*1.082e-01 , type = 'l')
 
 #new model
 common.models.final[['A126']][['MHQ.2']] <- update(m, formula = .~. - poly(A126.p.lag, 2) +
