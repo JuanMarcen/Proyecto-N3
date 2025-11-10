@@ -163,35 +163,35 @@ map_zone <- ggplot(hypsobath) +
                     breaks = levels(hypsobath$val_inf),
                     guide = guide_legend(reverse = TRUE)) +
   xlab("Longitud") + ylab("Latitud") +
-  geom_point(aes(x = X, y = Y, color = 'black'), 
-             data = data.frame(st_coordinates(stations.2)),
+  geom_point(aes(x = X, y = Y, color = stations$color), 
+             data = data.frame(st_coordinates(stations)),
              size = 3) +
   # ESQUINAS GEOPOTENCIAL
-  # geom_point(aes(x = X, y = Y),
-  #            data = data.frame(st_coordinates(cpoints)),
-  #            col = 'black',
-  #            size = 3,
-  #            shape = 15) +
-  # AEMET
   geom_point(aes(x = X, y = Y),
-             data = data.frame(st_coordinates(AEMET_points)),
-             col = 'purple',
+             data = data.frame(st_coordinates(cpoints)),
+             col = 'black',
              size = 3,
-             shape = 17) +
+             shape = 15) +
+  # AEMET
+  # geom_point(aes(x = X, y = Y),
+  #            data = data.frame(st_coordinates(AEMET_points)),
+  #            col = 'purple',
+  #            size = 3,
+  #            shape = 17) +
   #labels stations
-  ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations.2$STAID, color = 'black'),
+  ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations$STAID, color = stations$color),
                             size = 2.5, #original size = 3.5
                             position = 'identity', label.size = 0.025,
                             max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
-                            data = data.frame(st_coordinates(stations.2)),
+                            data = data.frame(st_coordinates(stations)),
                             seed = 23) +
   #labels aemet
-  ggrepel::geom_label_repel(aes(x = X, y = Y, label = AEMET_points$name, color = 'purple'),
-                            size = 2.5, #original size = 3.5
-                            position = 'identity', label.size = 0.025,
-                            max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
-                            data = data.frame(st_coordinates(AEMET_points)),
-                            seed = 23) +
+  # ggrepel::geom_label_repel(aes(x = X, y = Y, label = AEMET_points$name, color = 'purple'),
+  #                           size = 2.5, #original size = 3.5
+  #                           position = 'identity', label.size = 0.025,
+  #                           max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+  #                           data = data.frame(st_coordinates(AEMET_points)),
+  #                           seed = 23) +
   scale_color_identity() + 
   ggtitle(label = 'Ateca y alrededores') 
   

@@ -1652,14 +1652,15 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
     
     
     # INICIO DE LA SIMULACION
-    # MATRIZ DE SIMULACIONES
+    # MATRIZ DE SIMULACIONES # serí interesante guardar la probabilidad de lluvia predicha para cada simulacion
     n_days <- nrow(aux.data.day)
-    sim_matrix <- matrix(NA_real_, nrow = n_days, ncol = n.sim)
-    colnames(sim_matrix) <- paste0("p.day.sim.", 1:n.sim)
+    sim_matrix <- matrix(NA_real_, nrow = n_days, ncol = n.sim * 2)#!
+    #colnames(sim_matrix)[1:n.sim] <- paste0("p.day.sim.", 1:n.sim)
     
     if (!is.null(years)){
       # primera fecha (año anterior) lo que se ha simulado (en este caso observado)
-      sim_matrix[1, ] <- rep(aux.data.day[1, paste0(station, '.p')], times = n.sim)
+      sim_matrix[1, 1:n.sim] <- rep(aux.data.day[1, paste0(station, '.p')], times = n.sim) 
+      sim_matrix[1, (n.sim + 1):ncol(sim_matrix)] <- rep(mo$fitted.values[1], times = n.sim) #! #esta la vamos a quitar o sea
     }else{
       # en caso de que queramos todo el periodo, debemos simular el primer día con lo observado
       cat('Dia 1\n')
@@ -1706,7 +1707,8 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
       
       #correction of small values
       gamma_vec[gamma_vec > 0 & gamma_vec < 0.2] <- 0.2
-      sim_matrix[1, ] <- gamma_vec
+      sim_matrix[1, 1:n.sim] <- gamma_vec #!
+      sim_matrix[1, (n.sim + 1):ncol(sim_matrix)] <- rep(mo$fitted.values[1], times = n.sim)#!
     }
     
     # Umbral para considerar un valor "absurdo" — aquí uso el percentil 0.999 histórico
@@ -1801,7 +1803,9 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
       # Guardar las simulaciones activas en la matriz en la posición correspondiente
       simulation <- as.numeric(aux2$sim)
       simulation[simulation > 0 & simulation < 0.2] <- 0.2
-      sim_matrix[first.day, ] <- simulation
+      sim_matrix[first.day, 1:n.sim] <- simulation #!
+      
+      sim_matrix[first.day, (n.sim + 1):ncol(sim_matrix)] <- aux2$prob.dia
       
       
     } # end for days
@@ -1813,8 +1817,8 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
       sim_df <- as.data.frame(sim_matrix)
     }
     
-    names(sim_df) <- paste0("y.sim.", 1:n.sim)
-    
+    names(sim_df)[1:n.sim] <- paste0("y.sim.", 1:n.sim)
+    names(sim_df)[(n.sim + 1):ncol(sim_df)] <- paste0('prob.dia.', 1:n.sim)
     cat(length(active_sims), ' han sobrevivido a la simulación')
     
   }else{
@@ -2980,6 +2984,7 @@ hourly.simulations <- list(
 qsave(hourly.simulations, 'hourly.simulations.qs')
 
 #--- SIMULACIONES DIARIAS----
+y.sim.day.list <- qread('daily.simulations.qs')
 # phase 1: in observed/used data
 ph1.mdo <- function(station, models.list, mo, years = NULL, n.sim = 100){
   mdo <- models.list[[station]][[mo]]
@@ -3001,6 +3006,175 @@ ph1.mdo <- function(station, models.list, mo, years = NULL, n.sim = 100){
 }
 set.seed(05052002)
 ph1.mdo('A126', common.models.final, 'MDO.2', years = 2015)
+
+ph1.mdo.all <- function(station, models.list, mo, n.sim = 100, plot = TRUE,
+                        lag.partition = FALSE, quartiles.var = FALSE){
+  mdo <- models.list[[station]][[mo]]
+  X <- mdo$data
+  
+  if(lag.partition == FALSE & quartiles.var == FALSE){
+    means <- X %>%
+      group_by(t,mes) %>%
+      summarise(mean_Y = mean(Y, na.rm = TRUE)) %>%
+      ungroup() %>%
+      as.data.frame()
+    
+    
+    #fitted values of the model
+    p <- predict(mdo, newdata = X, type = 'response')
+    
+    #uniform if it rains or not with probabilites the fitted ones
+    sims <- data.frame(
+      replicate(n.sim, rbinom(length(p), size = 1, prob = p))
+    )
+    
+    sims$t <- X$t
+    sims$mes <- X$mes
+    
+    means.sims <- sims %>%
+      group_by(t, mes) %>%
+      summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%
+      ungroup() %>%
+      as.data.frame()
+    
+    means.sims <- means.sims[, -c(1,2)]
+    #proportion of greater values of rainy days
+    prop <- c()
+    for (i in 1:nrow(means)){
+      aux <- means.sims[i, ] > means[i, 'mean_Y']
+      prop <- c(prop, sum(aux) / n.sim)
+    }
+    
+    ks <- ks.test(prop, 'punif', 0, 1)
+    
+    if(plot == TRUE){
+      plot(1:nrow(means), prop, pch = 19,
+           xaxt = 'n', ylab = 'prob(sim > obs)', 
+           main = paste('Proportions in whole period', station,
+                        'KS test p-value:', round(ks$p.value, 4)),
+           xlab = 'Year-month')
+      axis(1, at = 1:nrow(means), labels = paste0(means$t, '-', means$mes))
+    }
+    
+    return(ks$p.value)
+    
+  }else if(lag.partition == TRUE & quartiles.var == FALSE){
+    lag.part <- X[[paste0(station, '.p.lag')]] > 0
+    
+    X$lag <- lag.part
+    
+    means <- X %>%
+      group_by(lag) %>%
+      summarise(mean_Y = mean(Y, na.rm = TRUE)) %>%
+      ungroup() %>%
+      as.data.frame()
+    
+    #fitted values of the model
+    p <- predict(mdo, newdata = X, type = 'response')
+    
+    sims <- data.frame(
+      replicate(n.sim, rbinom(length(p), size = 1, prob = p))
+    )
+    
+    sims$lag <- lag.part
+    
+    means.sims <- sims %>%
+      group_by(lag) %>%
+      summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%
+      ungroup() %>%
+      as.data.frame()
+    
+    means.false <- t(means.sims[1, -1])
+    means.true <- t(means.sims[2, -1])
+    
+    mean.obs.false <- means[1, 2]
+    mean.obs.true <- means[2,2]
+    
+    par(mfrow = c(1,2))
+    boxplot(means.false, 
+            main = paste(mo, station, "lag = FALSE"), 
+            ylim = c(min(c(mean.obs.false, means.false)), 
+                     max(c(mean.obs.false, means.false)))
+    )
+    points(1, mean.obs.false, col = 'red', pch = 19)
+    
+    boxplot(means.true, 
+            main = paste(mo, station, "lag = TRUE"), 
+            ylim = c(min(c(mean.obs.true, means.true)), 
+                     max(c(mean.obs.true, means.true)))
+    )
+    points(1, mean.obs.true, col = 'red', pch = 19)
+    
+    par(mfrow = c(1,1))
+  }else if (lag.partition == FALSE & quartiles.var == TRUE){
+    quartiles <- quantile(X[['zt700.42N.2W']], probs = c(0.25, 0.5, 0.75))
+    
+    p <- predict(mdo, newdata = X, type = 'response')
+    
+    sims <- data.frame(
+      replicate(n.sim, rbinom(length(p), size = 1, prob = p))
+    )
+    
+    X$grupo <- cut(X$zt700.41N.2W, 
+                   breaks = c(-Inf, 
+                              quartiles[1], 
+                              quartiles[2], 
+                              quartiles[3],
+                              Inf),
+                   labels = c("<=25%", "25%-50%", "50%-75%", ">75%"),
+                   include.lowest = TRUE)
+    
+    means <- X %>%
+      group_by(grupo) %>%
+      summarise(mean_Y = mean(Y, na.rm = TRUE)) %>%
+      ungroup() %>%
+      as.data.frame()
+    
+    sims$grupo <- X$grupo
+    
+    means.sims <- sims %>%
+      group_by(grupo) %>%
+      summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%
+      ungroup() %>%
+      as.data.frame()
+    
+    
+    par(mfrow = c(1,4))
+    for (i in 1:nrow(means.sims)){
+      mean.obs <- means[i, 2]
+      means.sim <- t(means.sims[i, -1])
+      
+      boxplot(means.sim, main = paste('zt700.42N.2W', means$grupo[i]),
+              ylim = c(min(c(mean.obs, means.sim)),
+                       max(c(mean.obs, means.sim))))
+      points(1, mean.obs, pch = 19, col = 'red')
+    }
+    par(mfrow = c(1,1))
+    
+  }else{
+    stop('Try again')
+  }
+    
+  
+  
+}
+
+set.seed(05052002)
+prop.months.mdo <- ph1.mdo.all('A126', common.models.final, 'MDO.3', n.sim = 100,
+                               lag.partition = F, quartiles.var = T)
+#all stations
+prop <- c()
+for (station in estaciones){
+  set.seed(05052002)
+  prop <- c(prop, ph1.mdo.all(station, common.models.final, 
+                              'MDO.3', n.sim = 100, plot = F))
+}
+plot(1:length(estaciones), prop, pch = 19,
+     xaxt = 'n', xlab = 'Stations', ylab ='ks p-value',
+     main = 'KS test p-values by station MDO.3')
+axis(1, at = 1:length(estaciones), labels = estaciones)
+abline(h = 0.05, col = 'red')
+abline(h = 0.01, col = 'red')
 
 ph1.mdq <- function(station, models.list, mq, data.mq,
                     period, years = NULL, n.sim = 100){
@@ -3126,22 +3300,36 @@ y.sim.day.exp.1 <- RAIN.GENERATOR.og('A126', df_hours, df_days, per.comun.day,
                                common.models.final, X.MDQ, 'MDO.2', 'MDQ',
                                ocurrence = TRUE, years = 2015,
                                type = 'day')
+set.seed(05052002)
 y.sim.day.exp.1.all <- RAIN.GENERATOR.og('A126', df_hours, df_days, per.comun.day, 
                                      common.models.final, X.MDQ, 'MDO.2', 'MDQ',
                                      ocurrence = TRUE, years = NULL,
                                      type = 'day')
 
+set.seed(05052002)
+y.sim.day.exp.3 <- RAIN.GENERATOR.og('A126', df_hours, df_days, per.comun.day, 
+                                     common.models.final, X.MDQ, 'MDO.3', 'MDQ',
+                                     ocurrence = TRUE, years = 2015,
+                                     type = 'day')
+set.seed(05052002)
+y.sim.day.exp.3.all <- RAIN.GENERATOR.og('A126', df_hours, df_days, per.comun.day, 
+                                         common.models.final, X.MDQ, 'MDO.3', 'MDQ',
+                                         ocurrence = TRUE, years = NULL,
+                                         type = 'day')
+
 daily.simulations <- list(
-  y.sim.day = y.sim.day,
-  y.sim.day.all = y.sim.day.all,
-  y.sim.day.exp.1 = y.sim.day.exp.1,
-  y.sim.day.exp.1.all = y.sim.day.exp.1.all
+  y.sim.day = y.sim.day.list$y.sim.day,
+  y.sim.day.all = y.sim.day.list$y.sim.day.all,
+  y.sim.day.exp.1 = y.sim.day.list$y.sim.day.exp.1,
+  y.sim.day.exp.1.all = y.sim.day.list$y.sim.day.exp.1.all,
+  y.sim.day.exp.3 = y.sim.day.exp.3,
+  y.sim.day.exp.3.all = y.sim.day.exp.3.all
 )
 qsave(daily.simulations, 'daily.simulations.qs')
 
 
 # analysis of effects for another MDQ
-m <- common.models.final[['A126']][['MDO']]
+m <- common.models.final[['A126']][['MDO.3']]
 summary(m)
 library(gam)
 X <- X.MDO[['A126']]
@@ -3152,6 +3340,10 @@ X <- X %>% filter(date >= per.comun.day[1] & date <= per.comun.day[2])
 
 plot(gam(formula = Y ~ s(A126.p.lag), data = X, family = binomial))
 abline(v = 8)
+
+aux.x <- -20:15
+poly.aux <- poly(aux.x, 3)
+plot(aux.x, 79.38498 * poly.aux[, 1] - -12.35477 * poly.aux[, 2] + 17.26444 * poly.aux[, 3], type = 'l')
 
 #new model
 common.models.final[['A126']][['MHQ.2']] <- update(m, formula = .~. - poly(A126.p.lag, 2) +
@@ -3238,7 +3430,7 @@ ocurrence.analysis(type = 'hour', station = 'A126', data.h = df_hours,
 
 ocurrence.analysis(type = 'day', station = 'A126', data.h = df_hours,
                    data.day = df_days, period = per.comun.day, years = NULL,
-                   y.sim = y.sim.day.exp.1.all)
+                   y.sim = y.sim.day.exp.3.all[, paste0('y.sim.', 1:100)])
 
 
 #extr
@@ -3516,7 +3708,7 @@ basura <- boxplot.q.sim(station = 'A126',
                         period = per.comun.day,
                         years = NULL, 
                         seasons = T, 
-                        y.sim = y.sim.day.exp.1.all, 
+                        y.sim = y.sim.day.exp.3.all[, paste0('y.sim.', 1:100)], 
                         plot = T,
                         type = 'day')
 
@@ -3659,7 +3851,8 @@ lines(276:365, y.sim.1[276:365], col = 'red', type = 'b', pch = 19)
 
 
 
-# BRIER SOCRE?
+#----BRIER SCORE----
 install.packages("DescTools")
 library(DescTools)
-BrierScore(common.models.final[['A126']][['MDO.2']])
+
+BrierScore(common.models.final[['A126']][['MDO']])

@@ -101,6 +101,7 @@ per.comun.day <- c(date.first, date.last)
 library(dplyr)
 library(gamlss)
 #library(logistf)
+X.MDO <- qread('X.MDO.qs')
 mod.comun <- function(station, per.comun, data, mod, chosen, 
                       type = 'log', subtype = NULL, log_file = "errores_modelo.txt",
                       data.used = NULL) {
@@ -957,6 +958,14 @@ for (station in estaciones){
   #MDO
   common.models.final[[station]][['MDO']] <- common.models[[station]][['MDO.pc.3']]
   common.models.final[[station]][['MDO.2']] <- common.models[[station]][['MDO.pc.4']]
+  data.aux <- common.models[[station]][['MDO.pc.3']]$data
+  formula.aux <- common.models[[station]][['MDO.pc.3']]$formula
+  mod.aux <- glm(formula.aux, data = data.aux, family = binomial(link = 'logit'))
+  common.models.final[[station]][['MDO.3']] <- update(
+    mod.aux, 
+    formula = as.formula(paste0('.~. -poly(', station.p, '.lag, 2) +
+                                I(', station.p, '.lag <', 9, '):I(log(pmax(', station.p, '.lag, 1e-6))) + 
+                                I(', station.p, '.lag >=',  9, '):I(', station.p, '.lag)')))
   
   #MHQ
   common.models.final[[station]][['MHQ']] <- common.models[[station]][['MHQ.pc.2']]

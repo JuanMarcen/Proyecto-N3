@@ -392,7 +392,8 @@ for (station in estaciones){
 for (station in estaciones) {
   station.p <- paste0(station, '.p')
   for (var in rev(names(deg_list.lag[[station]]))){
-    plot(gam(formula = as.formula(paste(station.p, '~ s(', var, ')')), data = X.MDQ[[station]]),
+    plot(gam(formula = as.formula(paste(station.p, '~ s(', var, ')')), data = X.MDQ[[station]],
+             family = Gamma(link = 'log')),
          main = paste(station, var, sep = '-'))
   }
   cat("Introduce los valores del vector de grados de la estación", station,
@@ -404,7 +405,7 @@ for (station in estaciones) {
   dev.off()
 }
 
-
+qsave(deg_list.lag, 'deg_list.lag.MDQ.qs')
 #degree for the lag variable of rain
 is.lag <- c()
 for (station in estaciones){
@@ -418,8 +419,8 @@ for (station in rev(estaciones)){
            data = X.MDQ[[station]], family = Gamma(link = 'log')), main = station)
 }
 
-deg_lag.new <- c(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 
-             3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
+deg_lag.new <- c(3, 3, -1, 3, 3, 2, -1, 2, 2, 2, 2, 3, 3, 2, 
+                 2, 2, 3, 1, 3, 2, 2, 3, 3, 2, 2, 2, 2, 2)
 names(deg_lag.new) <- estaciones
 deg_lag.new[!is.lag] <- 0
 
@@ -444,18 +445,26 @@ for (station in estaciones){
   }
   if(deg.lag == 0){
     vars <- aux
+  }else if(deg.lag == -1){
+    vars <- c(aux, paste0('I(log(pmax(', station, '.p.lag, 1e-06)))'))
   }else{
     vars <- c(aux, 
               paste0('poly(', station, '.p.lag, ', deg.lag, ')'))
   }
   
-  M6_list[[station]] <- step_glm(mod_null, 
+  M9_list[[station]] <- step_glm(mod_null, 
                                  data = X.MDQ[[station]], 
                                  vars = vars, 
                                  harmonics.l)
   
 }
 
+for (station in estaciones){
+  MDQ[[station]][['M9']] <- M9_list[[station]]
+  MDQ[[station]][['vars.M9']] <- M9_list[[station]]$mu.coefficients
+}
+rm('M9_list')
+qsave(MDQ, 'MDQ.qs')
 
 #----model comparison----
 AIC.df <- data.frame(matrix(NA, nrow = length(estaciones), ncol = 10))
