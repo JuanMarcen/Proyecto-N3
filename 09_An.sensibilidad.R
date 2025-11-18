@@ -4282,7 +4282,7 @@ oc.analysis <- function(data.h, station, full.simulation,
   
 }
 
-oc.analysis(df_hours, 'A126', full.sim.2014.2015.MHQ.thresh, n.sim.h = 20, n.sim.day = 1, 
+oc.analysis(df_hours, 'A287', full.sim.A287.2014.2015.MHQ.thresh, n.sim.h = 20, n.sim.day = 1, 
             data.mo.h = X.MHO, period.h = per.comun.h, years = c(2014, 2015))
 
 # OVERLAP?
@@ -4293,10 +4293,10 @@ oc.analysis(df_hours, 'A126', full.sim.2014.2015.MHQ.thresh, n.sim.h = 20, n.sim
 
 
 # QUANTITY ANALYSIS
-station <- 'A126'
-sim.day <- full.sim.2014.2015.MHQ.thresh$sim.day
-sim.hour <- full.sim.2014.2015.MHQ.thresh$sim.hour
-X <- X.MHO[[station]] #already rainy days
+station <- 'A287'
+sim.day <- full.sim.A287.2014.2015.MHQ.thresh$sim.day
+sim.hour <- full.sim.A287.2014.2015.MHQ.thresh$sim.hour
+X <- X.MDO[[station]] #already rainy days
 X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"),
                   format = '%Y-%m-%d')
 X <- X %>% filter(date >= per.comun.h[1] & date <= per.comun.h[2] 
@@ -4305,7 +4305,7 @@ X <- X %>% filter(date >= per.comun.h[1] & date <= per.comun.h[2]
 sim.day.1 <- sim.day[, 1]
 range(sim.day.1[sim.day.1 > 0])
 sum(sim.day.1)
-sum(X$A126.p)
+sum(X$A287.p)
 apply(sim.hour, 2, function(x) sum(x < 0))
 apply(sim.hour, 2, sum)
 
@@ -4403,7 +4403,7 @@ qty.analysis <- function(data.h, station, full.simulation,
 }
 
 
-qty.analysis(df_hours, 'A126', full.sim.2014.2015.MHQ.thresh, n.sim.h = 20,
+qty.analysis(df_hours, 'A287', full.sim.A287.2014.2015.MHQ.thresh, n.sim.h = 20,
              n.sim.day = 1, data.mo.h = X.MHO, period.h = per.comun.h, years = c(2014, 2015))
 
 
@@ -4422,7 +4422,7 @@ m$mu.formula
 basura <- update(m, formula = I(A126.p - 0.09) ~., what = 'mu')
 summary(basura)
 
-sim.hour <- full.sim.2014.2015.MHQ.thresh$sim.hour
+sim.hour <- full.sim.A287.2014.2015.MHQ.thresh$sim.hour
 basura2 <- sim.hour[sim.hour[, 1] > 0, 1]
 library(RcmdrMisc)
 qqplot(X$A126.p, basura2)
@@ -4504,22 +4504,95 @@ rain.streaks.df <- function(data = NULL, station, years, full.sim, streak.length
 }
 
 #analysis of streaks
-basura <- rain.streaks.df(df_days, 'A126', c(2014, 2015), full.sim.2014.2015.MHQ.thresh, 2, 3)
-
-station <- 'A126'
-years <- c(2014, 2015)
-sim.hour <- full.sim.2014.2015.MHQ.thresh$sim.hour
-date <- seq(
-  from = as.Date(paste0(years[1], "-01-01")),
-  to   = as.Date(paste0(years[2], "-12-31")),
-  by   = "day")
-sim.hour$date <- rep(date, each = 24)
-
-#expand date in order to select the full streak
-expand_dates <- function(date, streak.length) {
-  unlist(
-    lapply(date, function(d) d + 0:(streak.length - 1))
-  )
+#df and plot of the streaks
+streaks.df <- function(data.streak = NULL, station, years, full.sim, 
+                       streak.length, n.days,
+                       data.h = NULL, n.sim.h, plot = TRUE){
+  
+  aux.streak <- rain.streaks.df(data.streak, station, years, 
+                                full.sim, streak.length, n.days)
+  
+  if(!is.null(data.h)){
+    data.h$date <- as.Date(paste(data.h$t, data.h$mes, data.h$dia.mes, sep = "-"),
+                           format = '%Y-%m-%d')
+  }
+  
+  sim.hour <- full.sim$sim.hour
+  date <- seq(
+    from = as.Date(paste0(years[1], "-01-01")),
+    to   = as.Date(paste0(years[2], "-12-31")),
+    by   = "day")
+  sim.hour$date <- rep(date, each = 24)
+  
+  #expand date in order to select the full streak
+  expand_dates <- function(date, streak.length) {
+    as.Date(
+      unlist(
+        lapply(date, function(d) d + 0:(streak.length - 1))
+      )
+    )
+  }
+  
+  streak.dates <- expand_dates(aux.streak$date, streak.length)
+  sim.hour.streaks <- sim.hour %>%
+    filter(date %in% streak.dates)
+  
+  streaks.list <- list()
+  for (i in seq(1, length(streak.dates), by = streak.length)){
+    streak <- sim.hour.streaks %>%
+      filter(
+        date %in% streak.dates[i + 1 * 0:(streak.length - 1)]
+      )
+    streaks.list[[paste(streak.dates[i + 1 * 0:(streak.length - 1)], 
+                        collapse = '--')]] <- streak
+    
+    if (plot == TRUE){
+      plot(streak[, 1], type = 'b', pch = 19, cex = 0.5,
+           ylim = c(0, max(streak[, 1:n.sim.h])),
+           xlab = 'Hour',
+           ylab = 'Rain (mm)',
+           main = paste0(station, ': ', paste(streak.dates[i + 1 * 0:(streak.length - 1)], 
+                                              collapse = '--'),
+                         '. Total rain:', round(aux.streak$streak[(i - 1) %/% streak.length + 1], 3))
+      )
+      for(j in 2:n.sim.h){
+        lines(streak[, j], type = 'b', pch = 19, cex = 0.5)
+      }
+      #observed in that day
+      if (!is.null(data.h)){
+        obs.streak <- data.h %>%
+          filter(
+            date %in% streak.dates[c(i, i+1)]
+          )
+        lines(obs.streak[[paste0(station, '.p')]], col = 'red',
+              type = 'b', pch = 19, cex = 0.75)
+      }
+      
+      abline(v = 23 + 24 * 0:(streak.length - 2), col = 'red')
+    }
+    
+  }
+  
+  return(streaks.list)
 }
 
-expand_dates(basura$date, 2)
+par(mfrow = c(3, 1))
+streaks.3day.A287.2014.2015 <- streaks.df(data.streak = NULL,
+                                          station = 'A287',
+                                          years = c(2014, 2015),
+                                          full.sim = full.sim.A287.2014.2015.MHQ.thresh,
+                                          streak.length = 3,
+                                          n.days = 3,
+                                          data.h = NULL,
+                                          n.sim.h = 20,
+                                          plot = F)
+
+
+
+basura <- streaks.2day.A126.2014.2015$`2015-06-13--2015-06-14`[, c(21, 1:20)]
+write.table(basura, 'borrar.txt', sep = '\t', row.names = F)
+
+
+ rain.streaks.df(df_days, 'A287', c(2014, 2015), 
+                              full.sim.A287.2014.2015.MHQ.thresh, 2, 3)
+ 
