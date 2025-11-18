@@ -11,24 +11,24 @@ El lenguaje de programación utilizado es R. Los scripts se estructuran de la si
 
 ### Organización de los datos
 
-- Creación de datos horarios y diarios a partir de los datos 15 minutales proporcionados por la Confederación Hidrográfica del Ebro (CHEBRO): 01_dataframes.R
-- Obtención de datos climáticos diarios del reanálisis ERA5
-- Creación del conjunto de datos de las estaciones a utilizar (ubicación, nombre...)
+- Creación de datos horarios y diarios a partir de los datos 15 minutales proporcionados por la Confederación Hidrográfica del Ebro (CHEBRO): [01_dataframes.R](01_dataframes.R)
+- Obtención de datos climáticos diarios del reanálisis ERA5: [04_Dataframes_ERA5.R](04_Dataframes_ERA5.R)
+- Creación del conjunto de datos de las estaciones a utilizar (ubicación, nombre...): [03_stations.R](03_stations.R)
 
 ### Exploratorio
 
-- Análisis exploratorio de los datos
+- Análisis exploratorio de los datos: [Exploratorio.R](Exploratorio/Exploratorio.R)
 
 ### Modelización
 
 - Exploración de los mejores modelos locales:
-  - Modelo de ocurrencia horario (MHO):
-  - Modelo de cantidad horario (MHQ):
-  - Modelo de ocurrencia diario (MDO):
-  - Modelo de cantidad diario (MDO):
+  - Modelo de ocurrencia horario (MHO): [02.1_MHO.R](02.1_MHO.R)
+  - Modelo de cantidad horario (MHQ): [02.2_MHQ.R](02.2_MHQ.R)
+  - Modelo de ocurrencia diario (MDO): [05.1_MDO.R](05.1_MDO.R)
+  - Modelo de cantidad diario (MDO): [05.2_MDQ.R](05.2_MDQ.R)
  
-- Estudio de los mejores modelos comunes a todas estaciones:
-- Análisis de bondad de los modelos según métricas:
+- Estudio de los mejores modelos comunes a todas estaciones: [07_modeloComun.R](07_modeloComun.R)
+- Análisis de bondad de los modelos según métricas: [06_comp_by_methods.R](06_comp_by_methods.R), [methods.R](methods.R)
 
 ### Generadores de lluvia
-- Creación de generadores de lluvia y análisis de sensibilidad:
+- Creación de generadores de lluvia y análisis de sensibilidad: [09_An.sensibilidad.R](09_An.sensibilidad.R)
