@@ -1216,14 +1216,17 @@ standardization <- function(x, sum.to, correction = FALSE){
     factor <- sum.to / sum(x)
     x <- x * factor
   }else{
-    x[x <= 0.2 & x > 0] <- 0.2
-    remainder <- sum.to - sum(x[x == 0.2])
-    factor <- remainder/sum(x[x > 0.2])
-    x[x > 0.2] <- x[x > 0.2] * factor
+    x[x <= 0.1 & x > 0] <- 0.1
+    #x[x > 0.1 & x <= 0.2] <- 0.2
+    remainder <- sum.to  - sum(x[x==0.1])
+    factor <- remainder/sum(x[x > 0.1])
+    x[x > 0.1] <- x[x > 0.1] * factor
   }
   
   return(x)
 }
+
+standardization(c(0.1, 0.2, 0.15, 0.05, 3), sum.to = 3, correction = T)
 
 RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
                              models.list, data.mq, mo, mq, 
@@ -1231,6 +1234,10 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
                              n.sim = 100, type, day.simulation = NULL){
   
   if (type == 'hour'){
+    thresh <- FALSE
+    if(mo == 'MHQ.thresh'){
+      thresh <- TRUE
+    }
     #calculation of harmonics
     l <- 1:365
     h <- 0:23
@@ -1335,12 +1342,21 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
     # MATRIZ DE SIMULACIONES
     n_days <- nrow(aux.data.h)
     #n.sim <- 100
+    # OJO PROBLEMA, SI EL 1 DE ENERO DE UN AÑO LLUEVE QUE PASA PUES
+    # PODRÍAMOS EMPEZAR CON LAG SIMEPRE IGUAL A 0, EL PRIMERO,
+    # AÑADIR UNA FILA AUXILIAR
     sim_matrix <- matrix(NA_real_, nrow = n_days, ncol = n.sim)
-    colnames(sim_matrix) <- paste0("p.day.sim.", 1:n.sim)
     
     # relleno de 0's para días sin lluvia observada
+    
     ind.no.rain <- is.element(aux.data.h[[paste0(station.p, '.day')]], 0)
     sim_matrix[ind.no.rain, ] <- 0
+    
+    sim_matrix <- rbind(
+      rep(0, n.sim),  # primera fila de ceros (auxiliar en el caso de que lloviera el 1 de enero)
+      sim_matrix      
+    )
+    colnames(sim_matrix) <- paste0("p.day.sim.", 1:n.sim)
     
     # Umbral para considerar un valor "absurdo" — aquí uso el percentil 0.999 histórico
     umbral <- max(aux.data.h[[paste0(station, '.p')]], na.rm = T)
@@ -1447,7 +1463,13 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
           ungroup()
         
         # Guardar las simulaciones activas en la matriz en la posición correspondiente
-        sim_matrix[i, ] <- as.numeric(aux2$sim)
+        # añadir el threshold para que luego me pille el lag correcto
+        if (thresh == TRUE){
+          sim_matrix[i, ] <- as.numeric(aux2$sim) + 0.09
+        }else{
+          sim_matrix[i, ] <- as.numeric(aux2$sim) 
+        }
+        
         
         # Nota: las columnas correspondientes a simulaciones descartadas permanecen en NA
       } # end for days
@@ -1541,7 +1563,12 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
             ungroup()
           
           # Guardar las simulaciones activas en la matriz en la posición correspondiente
-          sim_matrix[i, sim.no.rain] <- as.numeric(aux2$sim)
+          if (thresh == TRUE){
+            sim_matrix[i, sim.no.rain] <- as.numeric(aux2$sim) + 0.09
+          }else{
+            sim_matrix[i, sim.no.rain] <- as.numeric(aux2$sim)
+          }
+          
           
           # Nota: las columnas correspondientes a simulaciones descartadas permanecen en NA
         }
@@ -1559,12 +1586,17 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
       
       sim_matrix[first.day, ] <- apply(sim_matrix[first.day, ], 2, 
                                        FUN = standardization, sum.to = rain.day,
-                                       correction = TRUE)
+                                       correction = FALSE)
       
     }
     
     # Convertir sim_matrix en data.frame con nombres adecuados y añadir a df.gen
-    sim_df <- as.data.frame(sim_matrix)
+    if(!is.null(years)){
+      sim_df <- as.data.frame(sim_matrix[-1, ]) #elimino primera fila que no es del año en cuestion
+      # es la fila auxiliar
+    }else{
+      sim_df <- as.data.frame(sim_matrix)
+    }
     names(sim_df) <- paste0("y.sim.", 1:n.sim)
     
     cat(length(active_sims), ' han sobrevivido a la simulación')
@@ -1824,7 +1856,8 @@ RAIN.GENERATOR.og <- function(station, data.h, data.day, period,
     names(sim_df)[(n.sim + 1):ncol(sim_df)] <- paste0('prob.dia.', 1:n.sim)
     cat(length(active_sims), ' han sobrevivido a la simulación')
     
-  }else{
+  }
+  else{
     stop('Type invalid. Use hour or day.')
   }
   
@@ -2984,7 +3017,9 @@ hourly.simulations <- list(
   y.sim.exp.3 = y.sim.exp.3,
   y.sim.exp.3.cor = y.sim.exp.3.cor
 )
-qsave(hourly.simulations, 'hourly.simulations.qs')
+y.sim.list[['y.sim.og.cor']] <- y.sim.og.cor
+y.sim.list[['y.sim.exp.3.cor']] <- y.sim.exp.3.cor
+qsave(y.sim.list, 'hourly.simulations.qs')
 
 #--- SIMULACIONES DIARIAS----
 y.sim.day.list <- qread('daily.simulations.qs')
@@ -4079,187 +4114,412 @@ BrierScore(common.models.final[['A126']][['MDO']])
 
 
 #----FULL SIMULATION: DAY -- > HOUR----
+
+# CORRECTION OF MHQ MODELS
+for (station in estaciones){
+  m <- common.models.final[[station]][['MHQ']]
+  X <- X.MHQ[[station]] #already rainy days
+  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"),
+                    format = '%Y-%m-%d')
+  X <- X %>% filter(date >= per.comun.h[1] & date <= per.comun.h[2])
+  
+  common.models.final[[station]][['MHQ.thresh']] <- update(m,
+                                                           formula = as.formula(paste0('I(', station, '.p - 0.09)~.')),
+                                                           what = 'mu')
+  
+}
+
+#only for 1 simlation of day
+full.simulation <- function(station, data.h, data.day, period.h, period.day, 
+                            models.list, data.mq.h, data.mq.day,
+                            mo.h, mo.day, mq.h, mq.day, ocurrence,
+                            years, n.sim.h, n.sim.day,
+                            seed){
+  set.seed(seed)
+  sim.day <- RAIN.GENERATOR.og(station = station,
+                               data.h = data.h, 
+                               data.day = data.day,
+                               period = period.day,
+                               models.list = models.list,
+                               data.mq = data.mq.day,
+                               mo = mo.day,
+                               mq = mq.day,
+                               ocurrence = ocurrence,
+                               years = years,
+                               n.sim = n.sim.day,
+                               type = 'day')
+  
+  sim.day.1 <- sim.day[, 1]
+  
+  set.seed(seed)
+  sim.hour <- RAIN.GENERATOR.og(station = station,
+                                data.h = data.h, 
+                                data.day = data.day,
+                                period = period.h,
+                                models.list = models.list,
+                                data.mq = data.mq.h,
+                                mo = mo.h,
+                                mq = mq.h,
+                                ocurrence = ocurrence,
+                                years = years,
+                                n.sim = n.sim.h, # numero mayor de 1
+                                type = 'hour',
+                                day.simulation = sim.day.1)
+  
+  return(list(
+    sim.day = sim.day,
+    sim.hour = sim.hour
+  ))
+}
+
+full.sim.A287.2014.2015.MHQ.thresh <- full.simulation(station = 'A287',
+                                        data.h = df_hours, 
+                                        data.day = df_days, 
+                                        period.h = per.comun.h,
+                                        period.day = per.comun.day,
+                                        models.list = common.models.final,
+                                        data.mq.h = X.MHQ,
+                                        data.mq.day = X.MDQ,
+                                        mo.h = 'MHO',
+                                        mo.day = 'MDO',
+                                        mq.h = 'MHQ.thresh',
+                                        mq.day = 'MDQ',
+                                        ocurrence = T,
+                                        years = c(2014, 2015),
+                                        n.sim.h = 20,
+                                        n.sim.day = 1,
+                                        seed = 05052002)
+
+full.simulations <- qread('full.simulations.qs')
+full.simulations <- list(
+  full.simulation.2015.cor = full.simulation.2015.cor,
+  full.simulation.2015.no.cor = full.simulation.2015.no.cor
+)
+full.simulations[['full.sim.A287.2014.2015.MHQ.thresh']] <- full.sim.A287.2014.2015.MHQ.thresh
+qsave(full.simulations, 'full.simulations.qs')
+
+
+#for 1 daily simulation only
+oc.analysis <- function(data.h, station, full.simulation, 
+                        n.sim.h, n.sim.day,
+                        data.mo.h, period.h, years){
+  
+  sim.day <- full.simulation[['sim.day']]
+  sim.hour <- full.simulation[['sim.hour']]
+  
+  sim.day.1 <- sim.day[, 1]
+  # add the daily simulation and dates
+  aux.data <- data.h %>%
+    filter(t == 2015)
+  sim.hour$p.day <- rep(sim.day.1, each = 24)
+  sim.hour$t <- aux.data$t
+  sim.hour$l <- aux.data$l
+  sim.hour$mes <- aux.data$mes
+  
+  # analysis of hourly simulations
+  
+  #rel.freq. inside each rainy day
+  #observed
+  X <- data.mo.h[[station]] #already rainy days
+  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"),
+                    format = '%Y-%m-%d')
+  X <- X %>% filter(date >= period.h[1] & date <= period.h[2] 
+                    & t %in% years)
+  
+  rel.freq.obs <- X %>%
+    group_by(t, l, mes) %>%
+    summarise(rel.freq = sum(.data[[paste0(station, '.p')]] > 0, na.rm = T)) %>%
+    as.data.frame()
+  
+  #simulated
+  rainy.days <- sim.hour[sim.hour$p.day > 0, ]
+  rel.freq.sim <- rainy.days %>%
+    group_by(p.day, t, l, mes) %>%
+    summarise(across(everything(), ~ sum(.x > 0, na.rm = TRUE))) %>%
+    as.data.frame()
+  
+  # ks test for each simulation vs observed
+  pvals <- c()
+  for (i in 1:n.sim.h){
+    ks <- ks.test(rel.freq.obs$rel.freq, rel.freq.sim[[paste0('y.sim.', i)]])
+    pvals <- c(pvals, ks$p.value)
+  }
+  
+  # IS KS GOOD FOR DISCRETE VARIABLES?
+  #chisq method
+  pvals.chisq <- c()
+  pvals.fisher <- c()
+  for (i in 1:n.sim.h){
+    t1 <- table(rel.freq.obs$rel.freq)
+    t2 <- table(rel.freq.sim[[paste0('y.sim.', i)]])
+    
+    cats <- union(names(t1), names(t2))
+    obs <- setNames(rep(0, length(cats)), cats)
+    sim <- setNames(rep(0, length(cats)), cats)
+    obs[names(t1)] <- as.numeric(t1)
+    sim[names(t2)] <- as.numeric(t2)
+    tabla <- rbind(obs, sim)
+    
+    test <- chisq.test(tabla, simulate.p.value = T, B = 2000)
+    pvals.chisq <- c(pvals.chisq, test$p.value)
+    
+    # test <- fisher.test(tabla)
+    # pvals.fisher <- c(pvals.fisher, test$p.value)
+  }
+  
+  #plot of p-values
+  plot(pvals, pch = 19, main = 'p-values test rel.freq.obs vs rel.freq.sim',
+       xlab = 'Simulation',
+       ylab = 'p-value', 
+       ylim = c(min(c(pvals, pvals.chisq)), max(c(pvals, pvals.chisq))))
+  points(pvals.chisq, col = 'red', pch = 19)
+  # points(pvals.fisher, col = 'forestgreen', pch = 19)
+  abline(h = 0.05, col = 'blue')
+  abline(h = 0.01, col = 'blue')
+  legend('topleft', legend = c('KS test', 'Chisq test'), 
+         col = c('black', 'red'),
+         pch = 19)
+  
+}
+
+oc.analysis(df_hours, 'A126', full.sim.2014.2015.MHQ.thresh, n.sim.h = 20, n.sim.day = 1, 
+            data.mo.h = X.MHO, period.h = per.comun.h, years = c(2014, 2015))
+
+# OVERLAP?
+# library(overlapping)
+# overlap(list(obs = rel.freq.obs$rel.freq,
+#              sim = rel.freq.sim$y.sim.2), plot = T,
+#         type = '1')
+
+
+# QUANTITY ANALYSIS
 station <- 'A126'
-set.seed(05052002)
-sim.day <- RAIN.GENERATOR.og(station = station,
-                             data.h = df_hours, 
-                             data.day = df_days,
-                             period = per.comun.day,
-                             models.list = common.models.final,
-                             data.mq = X.MDQ,
-                             mo = 'MDO',
-                             mq = 'MDQ',
-                             ocurrence = T,
-                             years = 2015,
-                             n.sim = 1,
-                             type = 'day')
-
-sim.day.1 <- sim.day[, 1]
-
-set.seed(05052002)
-sim.hour.og <- RAIN.GENERATOR.og(station = station,
-                              data.h = df_hours, 
-                              data.day = df_days,
-                              period = per.comun.h,
-                              models.list = common.models.final,
-                              data.mq = X.MHQ,
-                              mo = 'MHO',
-                              mq = 'MHQ',
-                              ocurrence = T,
-                              years = 2015,
-                              n.sim = 20, # numero mayor de 1
-                              type = 'hour',
-                              day.simulation = NULL)
-
-set.seed(05052002)
-sim.hour.prueba <- RAIN.GENERATOR.og(station = station,
-                                     data.h = df_hours, 
-                                     data.day = df_days,
-                                     period = per.comun.h,
-                                     models.list = common.models.final,
-                                     data.mq = X.MHQ,
-                                     mo = 'MHO',
-                                     mq = 'MHQ',
-                                     ocurrence = T,
-                                     years = 2015,
-                                     n.sim = 20, # numero mayor de 1
-                                     type = 'hour',
-                                     day.simulation = sim.day.1)
-
-# add the daily simulation and dates
-aux.data <- df_hours %>%
-  filter(t == 2015)
-sim.hour.prueba$p.day <- rep(sim.day.1, each = 24)
-sim.hour.prueba$t <- aux.data$t
-sim.hour.prueba$l <- aux.data$l
-sim.hour.prueba$mes <- aux.data$mes
-
-# analysis of hourly simulations
-
-#rel.freq. inside each rainy day
-#observed
+sim.day <- full.sim.2014.2015.MHQ.thresh$sim.day
+sim.hour <- full.sim.2014.2015.MHQ.thresh$sim.hour
 X <- X.MHO[[station]] #already rainy days
 X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"),
                   format = '%Y-%m-%d')
 X <- X %>% filter(date >= per.comun.h[1] & date <= per.comun.h[2] 
-                  & t == 2015)
+                  & t %in% c(2014, 2015))
 
-rel.freq.obs <- X %>%
-  group_by(t, l, mes) %>%
-  summarise(rel.freq = sum(A126.p > 0, na.rm = T)) %>%
-  as.data.frame()
-
-#simulated
-rainy.days <- sim.hour.prueba[sim.hour.prueba$p.day > 0, ]
-rel.freq.sim <- rainy.days %>%
-  group_by(p.day, t, l, mes) %>%
-  summarise(across(everything(), ~ sum(.x > 0, na.rm = TRUE))) %>%
-  as.data.frame()
-
-# ks test for each simulation vs observed
-pvals <- c()
-for (i in 1:20){
-  ks <- ks.test(rel.freq.obs$rel.freq, rel.freq.sim[[paste0('y.sim.', i)]])
-  pvals <- c(pvals, ks$p.value)
-}
-
-# IS KS GOOD FOR DISCRETE VARIABLES?
-#chisq method
-pvals.chisq <- c()
-for (i in 1:20){
-  t1 <- table(rel.freq.obs$rel.freq)
-  t2 <- table(rel.freq.sim[[paste0('y.sim.', i)]])
-  
-  cats <- union(names(t1), names(t2))
-  obs <- setNames(rep(0, length(cats)), cats)
-  sim <- setNames(rep(0, length(cats)), cats)
-  obs[names(t1)] <- as.numeric(t1)
-  sim[names(t2)] <- as.numeric(t2)
-  tabla <- rbind(obs, sim)
-  
-  test <- chisq.test(tabla, simulate.p.value = T, B = 1000)
-  pvals.chisq <- c(pvals.chisq, test$p.value)
-}
-
-#plot of p-values
-plot(pvals, pch = 19, main = 'p-values test rel.freq.obs vs rel.freq.sim',
-     xlab = 'Simulation',
-     ylab = 'p-value', 
-     ylim = c(min(c(pvals, pvals.chisq)), max(c(pvals, pvals.chisq))))
-points(pvals.chisq, col = 'red', pch = 19)
-abline(h = 0.05, col = 'blue')
-abline(h = 0.01, col = 'blue')
-legend('topleft', legend = c('KS test', 'Chisq test'), col = c('black', 'red'),
-       pch = 19)
-
-# OVERLAP?
-library(overlapping)
-overlap(list(obs = rel.freq.obs$rel.freq,
-             sim = rel.freq.sim$y.sim.2), plot = T,
-        type = '1')
-
-
-
-# rainy hours
-obs.oc <- sum(X$A126.p > 0)/nrow(X)
-ocurrence.rainy.days <- apply(rainy.days[, 1:20], 2 , function(x) sum(x > 0)/nrow(rainy.days))
-boxplot(ocurrence.rainy.days)
-points(obs.oc, col = 'red', pch = 19)
-
+sim.day.1 <- sim.day[, 1]
+range(sim.day.1[sim.day.1 > 0])
+sum(sim.day.1)
+sum(X$A126.p)
+apply(sim.hour, 2, function(x) sum(x < 0))
+apply(sim.hour, 2, sum)
 
 #quantity
 # plot(density(X$A126.p.day))
 # lines(density(rainy.days$p.day), col = 'red')
 # ks.test(X$A126.p.day, rainy.days$p.day)
-
-p.vals.qty <- c()
-
-for (i in 1:20){
-  ks <- ks.test(X[X$A126.p > 0, 'A126.p'], rainy.days[rainy.days[[paste0('y.sim.', i)]] > 0, 
-                                                      paste0('y.sim.', i)],
-                simulate.p.value = T)
-  p.vals.qty <- c(p.vals.qty, ks$p.value)
+library(tidyr)
+library(ggplot2)
+library(reshape2)
+library(overlapping)
+qty.analysis <- function(data.h, station, full.simulation, 
+                         n.sim.h, n.sim.day,
+                         data.mo.h, period.h, years){
+  
+  sim.day <- full.simulation[['sim.day']]
+  sim.hour <- full.simulation[['sim.hour']]
+  sim.day.1 <- sim.day[, 1]
+  # add the daily simulation and dates
+  aux.data <- data.h %>%
+    filter(t %in% years)
+  
+  sim.hour$p.day <- rep(sim.day.1, each = 24)
+  sim.hour$t <- aux.data$t
+  sim.hour$l <- aux.data$l
+  sim.hour$mes <- aux.data$mes
+  
+  rainy.days <- sim.hour[sim.hour$p.day > 0, ]
+  
+  # observed rain
+  X <- data.mo.h[[station]] #already rainy days
+  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"),
+                    format = '%Y-%m-%d')
+  X <- X %>% filter(date >= period.h[1] & date <= period.h[2] 
+                    & t %in% years)
+  
+  p.vals.qty <- c()
+  for (i in 1:n.sim.h){
+    ks <- ks.test(X[X[[paste0(station, '.p')]] > 0, paste0(station, '.p')], 
+                  rainy.days[rainy.days[[paste0('y.sim.', i)]] > 0, paste0('y.sim.', i)],
+                  simulate.p.value = T)
+    p.vals.qty <- c(p.vals.qty, ks$p.value)
+  }
+  plot(p.vals.qty, pch = 19, main = 'p-values KS test rain.obs vs rain.sim',
+       xlab = 'Simulation',
+       ylab = 'p-value', 
+       ylim = c(min(p.vals.qty), max(p.vals.qty)))
+  abline(h = 0.01, col = 'red')
+  abline(h = 0.05, col = 'red')
+  
+  rainy.days.long <- rainy.days[, 1:n.sim.h] %>%
+    pivot_longer(
+      cols = everything(),
+      names_to = "Sim",
+      values_to = "Value"
+    ) %>%
+    filter(Value > 0)
+  
+  real_box <- data.frame(
+    Sim = "Real",               # Nuevo nivel para el eje x
+    Value = X[[paste0(station, '.p')]][X[[paste0(station, '.p')]] > 0]
+  )
+  
+  # Unirlo al dataframe original
+  rainy.days.long2 <- rbind(real_box, rainy.days.long)
+  
+  rainy.days.long2$Sim <- factor(rainy.days.long2$Sim,
+                                 levels = c("Real", sort(unique(rainy.days.long$Sim))))
+  
+  ggplot(rainy.days.long2, aes(x = Sim, y = Value)) +
+    geom_boxplot(fill = "grey80", color = "black", outlier.shape = 1) +
+    labs(x = "Simulation", y = "Hourly rain", title = "Simulation boxplots (hourly rain > 0)") +
+    theme_bw(base_size = 12) +
+    theme(
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+      panel.grid = element_blank()
+    ) 
+  
+  #overlap
+  ov.val <- c()
+  for (i in 1:n.sim.h){
+    ov <- overlap(list(
+      X[X[[paste0(station, '.p')]] > 0, paste0(station, '.p')],
+                  rainy.days[rainy.days[[paste0('y.sim.', i)]] > 0, paste0('y.sim.', i)]
+      ))
+    ov.val <- c(ov.val, ov$OV)
+    
+  }
+  boxplot(ov.val, pch = 19, main = 'Overlap of densities',
+       xlab = 'Simulation',
+       ylab = 'p-value', 
+       ylim = c(min(ov.val), 1))
   
   
 }
-plot(p.vals.qty, pch = 19, main = 'p-values test rain.obs vs rain.sim',
-     xlab = 'Simulation',
-     ylab = 'p-value', 
-     ylim = c(min(p.vals.qty), max(p.vals.qty)))
-abline(h = 0.01, col = 'red')
-abline(h = 0.05, col = 'red')
+
+
+qty.analysis(df_hours, 'A126', full.sim.2014.2015.MHQ.thresh, n.sim.h = 20,
+             n.sim.day = 1, data.mo.h = X.MHO, period.h = per.comun.h, years = c(2014, 2015))
 
 
 # plot(density(X[X$A126.p > 0, 'A126.p']))
 # lines(density(rainy.days[rainy.days$y.sim.1 > 0, 'y.sim.1']), col = 'red')
 
-rainy.days.long <- rainy.days[, 1:20] %>%
-  pivot_longer(
-    cols = everything(),
-    names_to = "Sim",
-    values_to = "Value"
-  ) %>%
-  filter(Value > 0)
-
-real_box <- data.frame(
-  Sim = "Real",               # Nuevo nivel para el eje x
-  Value = X$A126.p[X$A126.p > 0]
-)
-
-# Unirlo al dataframe original
-rainy.days.long2 <- rbind(real_box, rainy.days.long)
-
-rainy.days.long2$Sim <- factor(rainy.days.long2$Sim,
-                               levels = c("Real", sort(unique(rainy.days.long$Sim))))
-
-ggplot(rainy.days.long2, aes(x = Sim, y = Value)) +
-  geom_boxplot(fill = "grey80", color = "black", outlier.shape = 1) +
-  labs(x = "Simulation", y = "Hourly rain", title = "Simulation boxplots (hourly rain > 0)") +
-  theme_bw(base_size = 12) +
-  theme(
-    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
-    panel.grid = element_blank()
-  ) 
 
 
+# PRUEBAS (jesus)
+X <- X.MHQ[['A287']] #already rainy days
+X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"),
+                  format = '%Y-%m-%d')
+X <- X %>% filter(date >= per.comun.h[1] & date <= per.comun.h[2] & t %in% years)
 
+m$mu.formula
+basura <- update(m, formula = I(A126.p - 0.09) ~., what = 'mu')
+summary(basura)
+
+sim.hour <- full.sim.2014.2015.MHQ.thresh$sim.hour
+basura2 <- sim.hour[sim.hour[, 1] > 0, 1]
+library(RcmdrMisc)
+qqplot(X$A126.p, basura2)
+abline(c(0,1), col = 'red')
+ks.test(basura2, X$A126.p)
+
+plot(density(basura2))
+lines(density(X$A126.p), col = 'blue')
+library(overlapping)
+plot(ecdf(basura2))
+lines(ecdf(X$A126.p), col = 'red')
+
+library(DescTools)
+AndersonDarlingTest(basura2)
+
+library(kSamples)
+ad.test(basura2, X$A126.p)
+
+overlap(list (basura2, X$A126.p))
+
+
+#----RACHAS----
+rain.streaks.df <- function(data = NULL, station, years, full.sim, streak.length, n.days){
+  
+  if (is.null(data)){
+    sim.day <- full.sim$sim.day
+    colnames(sim.day)[1] <- 'y' 
+  }else{
+    sim.day <- data
+    sim.day <- sim.day %>%
+      filter(
+        t %in% years
+      ) %>%
+      select(t, .data[[paste0(station, '.p')]])
+    colnames(sim.day) <- c('t', 'y')
+  }
+  
+  sim.day <- sim.day %>%
+    mutate(
+      date = seq(
+        from = as.Date(paste0(years[1], "-01-01")),
+        to   = as.Date(paste0(years[2], "-12-31")),
+        by   = "day"
+      )
+    ) 
+  # internal function to calculate streaks
+  streak <- function(x, k){
+    out <- rep(0, length(x))
+    
+    for(i in 1:(length(x) - k + 1)){
+      tramo <- x[i:(i+k-1)]
+      
+      # condición segura (sin NAs)
+      cond <- all(!is.na(tramo) & tramo > 0)
+      
+      if(cond){
+        out[i] <- sum(tramo, na.rm = TRUE)
+      } else {
+        out[i] <- 0
+      }
+    }
+    
+    return(out)
+  }
+  
+  # Añadir única columna de racha solicitada
+  sim.day <- sim.day %>%
+    mutate(
+      streak = streak(y, streak.length)
+    )
+  
+  
+  sim.day.racha <- sim.day %>% 
+    arrange(desc(streak)) %>%
+    select(date, y, streak) %>%
+    slice(1:n.days)
+  
+  return(sim.day.racha)
+}
+
+#analysis of streaks
+basura <- rain.streaks.df(df_days, 'A126', c(2014, 2015), full.sim.2014.2015.MHQ.thresh, 2, 3)
+
+station <- 'A126'
+years <- c(2014, 2015)
+sim.hour <- full.sim.2014.2015.MHQ.thresh$sim.hour
+date <- seq(
+  from = as.Date(paste0(years[1], "-01-01")),
+  to   = as.Date(paste0(years[2], "-12-31")),
+  by   = "day")
+sim.hour$date <- rep(date, each = 24)
+
+#expand date in order to select the full streak
+expand_dates <- function(date, streak.length) {
+  unlist(
+    lapply(date, function(d) d + 0:(streak.length - 1))
+  )
+}
+
+expand_dates(basura$date, 2)
