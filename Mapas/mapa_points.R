@@ -97,6 +97,7 @@ AEMET_sf <- st_transform(
   2062  # Destino
 )
 
+Ebro.97cities <- readRDS("Ebro.97cities.RDS")
 AEMET_points <- st_transform(
   as(
     SpatialPointsDataFrame(
@@ -108,10 +109,11 @@ AEMET_points <- st_transform(
   2062
 )
 
+
 AEMET_points <- AEMET_points[is.element(AEMET_points$name, c('Cetina', 'Tornos', 'Daroca')), ]
 
 # cleaning of workspace
-rm(list = setdiff(ls(), c("background", "limits", "stations", "cpoints", "AEMET_sf")))
+rm(list = setdiff(ls(), c("background", "limits", "stations", "cpoints", "AEMET_sf", "AEMET_points")))
 
 # Physical map of desired zone
 hypsobath <- esp_get_hypsobath()
@@ -173,11 +175,11 @@ map_zone <- ggplot(hypsobath) +
              size = 3,
              shape = 15) +
   # AEMET
-  # geom_point(aes(x = X, y = Y),
-  #            data = data.frame(st_coordinates(AEMET_points)),
-  #            col = 'purple',
-  #            size = 3,
-  #            shape = 17) +
+  geom_point(aes(x = X, y = Y),
+             data = data.frame(st_coordinates(AEMET_points)),
+             col = 'purple',
+             size = 3,
+             shape = 17) +
   #labels stations
   ggrepel::geom_label_repel(aes(x = X, y = Y, label = stations$STAID, color = stations$color),
                             size = 2.5, #original size = 3.5
@@ -186,12 +188,12 @@ map_zone <- ggplot(hypsobath) +
                             data = data.frame(st_coordinates(stations)),
                             seed = 23) +
   #labels aemet
-  # ggrepel::geom_label_repel(aes(x = X, y = Y, label = AEMET_points$name, color = 'purple'),
-  #                           size = 2.5, #original size = 3.5
-  #                           position = 'identity', label.size = 0.025,
-  #                           max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
-  #                           data = data.frame(st_coordinates(AEMET_points)),
-  #                           seed = 23) +
+  ggrepel::geom_label_repel(aes(x = X, y = Y, label = AEMET_points$name, color = 'purple'),
+                            size = 2.5, #original size = 3.5
+                            position = 'identity', label.size = 0.025,
+                            max.time = 0.5, max.iter = 1000000, max.overlaps = 100,
+                            data = data.frame(st_coordinates(AEMET_points)),
+                            seed = 23) +
   scale_color_identity() + 
   ggtitle(label = 'Ateca y alrededores') 
   
