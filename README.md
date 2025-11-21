@@ -14,6 +14,7 @@ El lenguaje de programación utilizado es R. Los scripts se estructuran de la si
 - Creación de datos horarios y diarios a partir de los datos 15 minutales proporcionados por la Confederación Hidrográfica del Ebro (CHEBRO): [01_dataframes.R](01_dataframes.R)
 - Obtención de datos climáticos diarios del reanálisis ERA5: [04_Dataframes_ERA5.R](04_Dataframes_ERA5.R)
 - Creación del conjunto de datos de las estaciones a utilizar (ubicación, nombre...): [03_stations.R](03_stations.R)
+- Creación de mapas: [mapa_points.R](mapa_points.R)
 
 ### Exploratorio
 
