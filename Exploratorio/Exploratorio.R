@@ -127,7 +127,7 @@ for (station in estaciones){
 
 # in case we want the info for data every 15'
 for (station in estaciones){
-  assign(paste0('df.min.desc.', station), df.desc.mes(station, df_minutes))
+  assign(paste0('df.min.desc.', station), df.desc(station, df_minutes, tipo = 'mes'))
 }   
 
 # table writing for Word

@@ -3946,7 +3946,7 @@ basura <- boxplot.q.sim(station = 'A126',
                         period = per.comun.h,
                         years = 2015, 
                         seasons = T, 
-                        y.sim = y.sim.list$y.sim.og.cor, 
+                        y.sim = y.sim.list$y.sim.og, 
                         plot = T,
                         type = 'hour')
 
