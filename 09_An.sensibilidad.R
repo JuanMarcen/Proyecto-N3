@@ -818,16 +818,16 @@ boxplot.q.sim <- function(station, data, model.list, model, period,
 
 set.seed(05052002)
 # par(mfrow= c(2,2))
-basura <- boxplot.q.sim(estaciones[estaciones == 'A126'], X.MHO, common.models.final, 'MHQ', 
-              per.comun.h, 
+basura <- boxplot.q.sim(estaciones[estaciones == 'A126'], X.MDO, common.models.final, 'MDQ', 
+              per.comun.day, 
               quantiles = c(0.05, 0.50, 0.90, 0.95, 0.99),
-              n.sim = 100, month = NULL, years = 2015,
+              n.sim = 100, month = NULL, years = c(2011,2023),
               seasons = TRUE,
-              generator = 3,
+              generator = 1,
               plot = TRUE, 
-              extreme.lag = TRUE,
+              extreme.lag = F,
               n.days = 8, 
-              partition.lag = TRUE,
+              partition.lag = F,
               top.quarter.z.value = F)
 
 boxplot.q.sim(estaciones[1], X.MDQ, common.models.final, 'MDQ', 
@@ -843,7 +843,7 @@ boxplot.q.sim(estaciones[1], X.MDQ, common.models.final, 'MDQ',
               quantiles = c(0.05, 0.50, 0.90, 0.95, 0.99),
               n.sim = 100, month = c(3,4,5), plot = TRUE)
 
-
+# control de los modelos individuales
 
 df.q.sim.gr.obs <- function(stations, data, model.list, model, period,
                             quantiles, n.sim, month = NULL, 
@@ -3714,7 +3714,8 @@ boxplot.q.sim <- function(station, data.mo, data.h, data.day, period,
                           y.sim, 
                           quantiles = c(0.05, 0.50, 0.90, 0.95, 0.99),
                           plot = TRUE,
-                          type){
+                          type,
+                          observed = FALSE){
   #datos donde se ajusta el model, i.e, dias de lluvia
   if (type == 'hour'){
     X <- data.mo[[station]]
@@ -3738,7 +3739,12 @@ boxplot.q.sim <- function(station, data.mo, data.h, data.day, period,
     
     #obtencion del subset de simulaciones con lluvias
     aux.ind <- which(data.h$date %in% unique(X$date))
-    y.sim.rain <- y.sim[aux.ind, ]
+    if (observed == T){
+      y.sim.rain <- y.sim
+    }else{
+      y.sim.rain <- y.sim[aux.ind, ]
+    }
+    
     # ahora X y y.sim.rain tiene misma longitud
     
     if (!is.null(seasons)){
@@ -3758,7 +3764,7 @@ boxplot.q.sim <- function(station, data.mo, data.h, data.day, period,
     
     names.q <- paste0('q.', quantiles)
     
-    season.names <- c('ALL', 'JJA', 'SON', 'DJF', 'MAM')
+    season.names <- c(paste(years, collapse = '-'), 'JJA', 'SON', 'DJF', 'MAM')
     
     aux <- c()
     i <- 1
@@ -3939,16 +3945,17 @@ boxplot.q.sim <- function(station, data.mo, data.h, data.day, period,
   return(df)
 }
 
-basura <- boxplot.q.sim(station = 'A126', 
+basura <- boxplot.q.sim(station = 'EM71', 
                         data.mo = X.MHO, 
                         data.h = df_hours,
                         data.day = df_days,
                         period = per.comun.h,
-                        years = 2015, 
+                        years = c(2011:2025), 
                         seasons = T, 
-                        y.sim = y.sim.list$y.sim.og, 
+                        y.sim = sim.obs.h, 
                         plot = T,
-                        type = 'hour')
+                        type = 'hour',
+                        observed = T)
 
 basura <- boxplot.q.sim(station = 'A126', 
                         data.mo = X.MDO, 
@@ -3962,8 +3969,122 @@ basura <- boxplot.q.sim(station = 'A126',
                         type = 'day')
 
 
+
+
 density(basura)
 ks.test(unique(unlist(basura)), 'punif', 0, 1)
+
+#control of models
+sim.quantity.model <- function(station, data, period, models.list, model, n.sim, type){
+  if(type == 'hour'){
+    X <- data[[station]]
+    X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = '-'), 
+                      format = '%Y-%m-%d')
+    X <- X %>% 
+      filter(date >= period[1] & date <= period[2])
+    
+    mod <- common.models.final[[station]][[model]]
+    mu <- mod$mu.fv
+    shape <- 1 / mod$sigma.fv^2
+    rate <- shape / mu
+    sim.obs <- generator.qty.obs(length(mu), shape = shape, rate = rate, n.sim)
+    if (grepl('thresh', model) == T){
+      cat('correction threshold:')
+      sim.obs <- sim.obs + 0.09
+    }
+    
+    dates.simulated <- X$date[X[[paste0(station, '.p')]] > 0]
+    hour.simulated <- X$h[X[[paste0(station, '.p')]] > 0]
+    sim.obs$date <- dates.simulated
+    sim.obs$h <- hour.simulated
+    
+    sim.obs.full <- X %>%
+      select(date, h) %>%                 
+      left_join(sim.obs, by = c("date", 'h'))  
+    sim.obs.full[is.na(sim.obs.full)] <- 0
+    sim.obs.full$date <- NULL
+    sim.obs.full$h <- NULL
+  }else{
+    X <- data[[station]]
+    X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = '-'), 
+                      format = '%Y-%m-%d')
+    X <- X %>% 
+      filter(date >= period[1] & date <= period[2])
+    
+    mod <- common.models.final[[station]][[model]]
+    mu <- mod$mu.fv
+    shape <- 1 / mod$sigma.fv^2
+    rate <- shape / mu
+    sim.obs <- generator.qty.obs(length(mu), shape = shape, rate = rate, n.sim)
+    
+    dates.simulated <- X$date[X[[paste0(station, '.p')]] > 0]
+    sim.obs$date <- dates.simulated
+
+    sim.obs.full <- X %>%
+      select(date) %>%                 
+      left_join(sim.obs, by = c("date"))  
+    sim.obs.full[is.na(sim.obs.full)] <- 0
+    sim.obs.full$date <- NULL
+  }
+ 
+  return(sim.obs.full)
+}
+sim.obs.h <- sim.quantity.model('A126', X.MHO, per.comun.h, common.models.final, 'MHQ.thresh', 100,
+                                type = 'hour')
+sim.obs.day <- sim.quantity.model('A126', X.MDO, per.comun.day, common.models.final, 'MDQ', 100,
+                                  type = 'day')
+
+p.vals.ks <- function(models.list, model, 
+                     stations,
+                     data.mo, data.h, data.day, 
+                     period, years, seasons,
+                     type){
+  
+  pvals <- c()
+  for (station in stations){
+    
+    sim.obs <- sim.quantity.model(station, data.mo, period, 
+                                  models.list, model, 
+                                  n.sim = 100, 
+                                  type = type)
+    
+    prop <- boxplot.q.sim(station = station, 
+                            data.mo = data.mo, 
+                            data.h = data.h,
+                            data.day = data.dat,
+                            period = period,
+                            years = years, 
+                            seasons = seasons, 
+                            y.sim = sim.obs, 
+                            plot = FALSE,
+                            type = type,
+                            observed = TRUE)
+    
+    pvals <- c(pvals, ks.test(unique(unlist(prop)), 'punif', 0, 1)$p.value)
+  }
+  
+  names(pvals) <- stations
+  return(pvals)
+}
+
+p.vals.ks.h <- p.vals.ks(common.models.final, 'MHQ.thresh',
+                         estaciones, 
+                         X.MHO,
+                         df_hours, df_days,
+                         per.comun.h,
+                         2011:2025,
+                         seasons = T,
+                         type = 'hour')
+summary(p.vals.ks.h)
+p.vals.ks.day <- p.vals.ks(common.models.final, 'MDQ',
+                           estaciones, 
+                           X.MDO,
+                           df_hours, df_days,
+                           per.comun.day,
+                           2011:2025,
+                           seasons = T,
+                           type = 'day')
+
 #comparación de máximos y quantiles
 library(ggplot2)
 library(dplyr)
@@ -4162,7 +4283,7 @@ full.simulation <- function(station, data.h, data.day, period.h, period.day,
                                 mq = mq.h,
                                 ocurrence = ocurrence,
                                 years = years,
-                                n.sim = n.sim.h, # numero mayor de 1
+                                n.sim = n.sim.h, #numero mayor de 1
                                 type = 'hour',
                                 day.simulation = sim.day.1)
   
@@ -4198,7 +4319,7 @@ full.simulations <- list(
 full.simulations[['full.sim.A287.2014.2015.MHQ.thresh']] <- full.sim.A287.2014.2015.MHQ.thresh
 qsave(full.simulations, 'full.simulations.qs')
 
-
+full.simulations <- qread('full.simulations.qs')
 #for 1 daily simulation only
 oc.analysis <- function(data.h, station, full.simulation, 
                         n.sim.h, n.sim.day,
@@ -4239,12 +4360,12 @@ oc.analysis <- function(data.h, station, full.simulation,
     as.data.frame()
   
   # ks test for each simulation vs observed
-  pvals <- c()
-  for (i in 1:n.sim.h){
-    ks <- ks.test(rel.freq.obs$rel.freq, rel.freq.sim[[paste0('y.sim.', i)]])
-    pvals <- c(pvals, ks$p.value)
-  }
-  
+  # pvals <- c()
+  # for (i in 1:n.sim.h){
+  #   ks <- ks.test(rel.freq.obs$rel.freq, rel.freq.sim[[paste0('y.sim.', i)]])
+  #   pvals <- c(pvals, ks$p.value)
+  # }
+  # 
   # IS KS GOOD FOR DISCRETE VARIABLES?
   #chisq method
   pvals.chisq <- c()
@@ -4268,22 +4389,25 @@ oc.analysis <- function(data.h, station, full.simulation,
   }
   
   #plot of p-values
-  plot(pvals, pch = 19, main = 'p-values test rel.freq.obs vs rel.freq.sim',
+  plot(pvals.chisq, pch = 19, main = 'p-values test rel.freq.obs vs rel.freq.sim',
        xlab = 'Simulation',
        ylab = 'p-value', 
-       ylim = c(min(c(pvals, pvals.chisq)), max(c(pvals, pvals.chisq))))
-  points(pvals.chisq, col = 'red', pch = 19)
+       ylim = c(min(c(pvals.chisq, pvals.chisq)), max(c(pvals.chisq, pvals.chisq))))
+  #points(pvals.chisq, col = 'red', pch = 19)
   # points(pvals.fisher, col = 'forestgreen', pch = 19)
   abline(h = 0.05, col = 'blue')
   abline(h = 0.01, col = 'blue')
-  legend('topleft', legend = c('KS test', 'Chisq test'), 
-         col = c('black', 'red'),
+  # legend('topleft', legend = c('KS test', 'Chisq test'), 
+  #        col = c('black', 'red'),
+  #        pch = 19)
+  legend('topleft', legend = c('Chisq test'), 
+         col = c('black'),
          pch = 19)
   
 }
 
-oc.analysis(df_hours, 'A126', full.simulations$full.simulation.2015.cor.thresh, n.sim.h = 20, n.sim.day = 1, 
-            data.mo.h = X.MHO, period.h = per.comun.h, years = c(2015))
+oc.analysis(df_hours, 'A126', full.simulations$full.sim.2014.2015.MHQ.thresh, n.sim.h = 20, n.sim.day = 1, 
+            data.mo.h = X.MHO, period.h = per.comun.h, years = c(2014, 2015))
 
 # OVERLAP?
 # library(overlapping)
@@ -4403,8 +4527,8 @@ qty.analysis <- function(data.h, station, full.simulation,
 }
 
 
-qty.analysis(df_hours, 'A126', full.simulations$full.simulation.2015.cor.thresh, n.sim.h = 20,
-             n.sim.day = 1, data.mo.h = X.MHO, period.h = per.comun.h, years = c(2015))
+qty.analysis(df_hours, 'A126', full.simulations$full.sim.2014.2015.MHQ.thresh, n.sim.h = 20,
+             n.sim.day = 1, data.mo.h = X.MHO, period.h = per.comun.h, years = c(2014, 2015))
 
 
 # plot(density(X[X$A126.p > 0, 'A126.p']))
@@ -4445,6 +4569,7 @@ overlap(list (basura2, X$A126.p))
 
 
 #----RACHAS----
+# ravhas basadas en simulacion diaria
 #sum of simulations to obtain a global simulation of the region
 sum.simulations <- function(simulations, n.years, n.sim.h, n.sim.day){ 
   sim.day.sum <- matrix(0, ncol = n.sim.day + 1, nrow = n.years * 365)
@@ -4680,7 +4805,67 @@ streaks.3day.A126.A287.2014.2015 <- streaks.df(data.streak = NULL,
                                                full.sim.2 = full.simulations$full.sim.A287.2014.2015.MHQ.thresh)
 
 
+# rachas basadas en simulaciones horarias
+years <- c(2014, 2015)
+n.sim.h <- 20
+sim.hour <- full.sim.sum$sim.hour
 
+sim.hour <- sim.hour %>%
+  mutate(
+    datetime = seq(
+      from = as.POSIXct(paste0(years[1], "-01-01 00:00:00"), tz = "UTC"),
+      to   = as.POSIXct(paste0(years[2], "-12-31 23:00:00"), tz = "UTC"),
+      by   = "hour"
+    )
+  )
+
+#peak hours
+library(tidyr)
+peak.hours <- sim.hour %>%
+  pivot_longer(
+    cols = -datetime,
+    names_to = "variable",
+    values_to = "value"
+  ) %>%
+  group_by(variable) %>%
+  summarise(
+    max = max(value, na.rm = TRUE),
+    datetime_max = datetime[which.max(value)]
+  ) %>%
+  arrange(desc(max))
+
+
+#accumulated rain in hours
+n.hours <- 4
+library(zoo)
+acc.hour <- sim.hour %>%
+  transmute(
+    datetime,
+    across(
+      .cols = -datetime,
+      .fns = ~ rollapply(., width = 4, FUN = sum, align = "left", fill = NA),
+      .names = "{.col}"
+    )
+  ) %>%
+  na.omit()
+
+acc.hour.max <- acc.hour %>%
+  pivot_longer(
+    cols = -datetime,
+    names_to = 'variable',
+    values_to = 'value'
+  ) %>%
+  group_by(variable) %>%
+  summarise(
+    max.acc = max(value, na.rm = T),
+    datetime_max = datetime[which.max(value)]
+  ) %>% 
+  arrange(desc(max.acc))
+
+# select the number of extreme events
+
+
+# pasada a documento de texto
 streak.data.to.txt <- function(streak.list, folder, station.ref, sep = '\t'){
   
   for (i in 1:length(streak.list)){

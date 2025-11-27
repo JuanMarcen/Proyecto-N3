@@ -1311,3 +1311,31 @@ ggplot(df, aes(x = station, y = value)) +
     title = paste("Intervalos de confianza del coeficiente MDO:", var)
   ) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+#----AUC separados----
+
+df <- data.frame(
+  station = estaciones
+)
+library(pROC)
+for (i in 1:length(estaciones)){
+  station <- estaciones[i]
+  
+  X <- X.MDO[[station]]
+  X$date <- as.Date(paste(X$t, X$mes, X$dia.mes, sep = "-"), 
+                    format = '%Y-%m-%d')
+  
+  ind <- which(X$date >= per.comun.day[1] & X$date <= per.comun.day[2])
+  
+  mod.common <- common.models.final[[station]][['MDO']]
+  
+  roc.mod.common <- suppressMessages(
+    roc(X$Y[ind], predict(mod.common, type = 'response'))
+  )
+  
+  df[i, 'AUC.mod.common'] <- auc(roc.mod.common)
+    
+}
+summary(df$AUC.mod.common)  
+  

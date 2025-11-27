@@ -314,7 +314,7 @@ model.comp.df <- function(estaciones, ref.period, data, models.list, m1, m2, n.s
 }
 
 df.day.M6.M9 <- model.comp.df(estaciones, per.comun.day, X.MDQ, MDQ, 'M6', 'M9', n.sim = 100)
-df.hour.M7.M8 <- model.comp.df(estaciones[-4], per.comun.h, MHQ, 'M7', 'M8', n.sim = 100)
+df.hour.M7.M8 <- model.comp.df(estaciones[-4], per.comun.h, X.MHQ, MHQ, 'M7', 'M8', n.sim = 100)
 
 library(writexl)
 write_xlsx(df.day.M6.M9, "df.day.M6.M9.xlsx")
