@@ -3945,7 +3945,7 @@ boxplot.q.sim <- function(station, data.mo, data.h, data.day, period,
   return(df)
 }
 
-basura <- boxplot.q.sim(station = 'EM71', 
+basura <- boxplot.q.sim(station = 'R036', 
                         data.mo = X.MHO, 
                         data.h = df_hours,
                         data.day = df_days,
@@ -4029,7 +4029,7 @@ sim.quantity.model <- function(station, data, period, models.list, model, n.sim,
  
   return(sim.obs.full)
 }
-sim.obs.h <- sim.quantity.model('A126', X.MHO, per.comun.h, common.models.final, 'MHQ.thresh', 100,
+sim.obs.h <- sim.quantity.model('R036', X.MHO, per.comun.h, common.models.final, 'MHQ.thresh', 100,
                                 type = 'hour')
 sim.obs.day <- sim.quantity.model('A126', X.MDO, per.comun.day, common.models.final, 'MDQ', 100,
                                   type = 'day')
@@ -4051,7 +4051,7 @@ p.vals.ks <- function(models.list, model,
     prop <- boxplot.q.sim(station = station, 
                             data.mo = data.mo, 
                             data.h = data.h,
-                            data.day = data.dat,
+                            data.day = data.day,
                             period = period,
                             years = years, 
                             seasons = seasons, 
@@ -4076,15 +4076,18 @@ p.vals.ks.h <- p.vals.ks(common.models.final, 'MHQ.thresh',
                          seasons = T,
                          type = 'hour')
 summary(p.vals.ks.h)
+sum(p.vals.ks.h > 0.01) / 28 * 100
+
 p.vals.ks.day <- p.vals.ks(common.models.final, 'MDQ',
                            estaciones, 
                            X.MDO,
                            df_hours, df_days,
                            per.comun.day,
-                           2011:2025,
+                           2011:2023,
                            seasons = T,
                            type = 'day')
-
+summary(p.vals.ks.day)
+sum(p.vals.ks.day > 0.05) / 28 * 100
 #comparación de máximos y quantiles
 library(ggplot2)
 library(dplyr)
@@ -4595,9 +4598,10 @@ full.sim.sum <- sum.simulations(list(full.simulations$full.sim.2014.2015.MHQ.thr
                           n.sim.day = 1)
 
 
-rain.streaks.df(data= NULL, NULL, c(2014, 2015), full.sim.sum, 2, 3)
+rain.streaks.df(data= NULL, 'A126', c(2014, 2015), full.sim.sum, 2, 3)
 
-rain.streaks.df <- function(data = NULL, station, years, full.sim, streak.length, n.days){
+rain.streaks.df <- function(data = NULL, station, years, full.sim, 
+                            streak.length, n.days){
   
   if (is.null(data)){
     sim.day <- full.sim$sim.day
@@ -4659,13 +4663,28 @@ rain.streaks.df <- function(data = NULL, station, years, full.sim, streak.length
 #df and plot of the streaks
 streaks.df <- function(data.streak = NULL, stations, years, full.sim.sum,
                        station.1, full.sim.1,
-                       streak.length, n.days,
+                       streak.length, n.events,
                        data.h = NULL, n.sim.h, plot = TRUE,
-                       station.2 = NULL, full.sim.2 = NULL){
+                       station.2 = NULL, full.sim.2 = NULL,
+                       type.event,
+                       streak.length.h = NULL){
   
-  # streaks of the objective stations
-  aux.streak <- rain.streaks.df(data.streak, station, years, 
-                                full.sim.sum, streak.length, n.days)
+  if (type.event == 'daily rainy spell'){
+    # daily streaks of the objective stations
+    aux.streak <- rain.streaks.df(data.streak, station, years, 
+                                  full.sim.sum, streak.length, n.events)
+  }else if (type.event == 'hourly peak'){
+    aux.streak <- hourly.ext.event(years = years, full.sim.sum, 
+                     type = 'peak', n.events = n.events)
+  }else if (type.event == 'hourly rainy spell'){
+    aux.streak <- hourly.ext.event(years = years, full.sim.sum, 
+                     type = 'rainy spell', 
+                     n.events = n.events, 
+                     streak.length.h = streak.length.h)
+  }else{
+    stop("type.event not valid. Try 'daily rainy spell', 'hourly rainy spell' or 'hourly peak'.")
+  }
+  
   
   if(!is.null(data.h)){
     data.h$date <- as.Date(paste(data.h$t, data.h$mes, data.h$dia.mes, sep = "-"),
@@ -4682,6 +4701,15 @@ streaks.df <- function(data.streak = NULL, stations, years, full.sim.sum,
     to   = as.Date(paste0(years[2], "-12-31")),
     by   = "day")
   sim.hour.1$date <- rep(date, each = 24)
+  #add datetime column
+  sim.hour.1 <- sim.hour.1 %>%
+    mutate(
+      datetime = seq(
+        from = as.POSIXct(paste0(years[1], "-01-01 00:00:00"), tz = "UTC"),
+        to   = as.POSIXct(paste0(years[2], "-12-31 23:00:00"), tz = "UTC"),
+        by   = "hour"
+      )
+    )
   
   #expand date in order to select the full streak
   expand_dates <- function(date, streak.length) {
@@ -4692,103 +4720,295 @@ streaks.df <- function(data.streak = NULL, stations, years, full.sim.sum,
     )
   }
   
-  #objective streak dates
-  streak.dates <- expand_dates(aux.streak$date, streak.length)
-  sim.hour.1.streaks <- sim.hour.1 %>%
-    filter(date %in% streak.dates)
+  #expand date times when we use an hourly method
+  expand_datetimes <- function(datetimes, skip.after = 0,
+                               n.hours = 24) {
+    
+    datetimes <- as.POSIXct(datetimes)
+    
+    lapply(datetimes, function(dt) {
+      
+      # Horas ANTERIORES: dt - 1h, dt - 2h, ..., dt - n.before h
+      before <- dt - seq_len(n.hours) * 3600
+      
+      # Horas POSTERIORES:
+      #   - saltamos skip.after horas
+      #   - incluimos n.after horas a partir de ahí
+      if (skip.after == 0){
+        medium <- dt
+      }else{
+        medium <- dt + 3600 * 0:(skip.after)
+      }
+      
+      after <- dt + (skip.after + seq_len(n.hours)) * 3600
+      
+      # Devolvemos vector combinado ordenado
+      sort(c(before, medium, after))
+    })
+  }
+  
+  #objective date times or dates
+  if(type.event == 'daily rainy spell'){
+    streak.dates <- expand_dates(aux.streak$date, streak.length)
+    sim.hour.1.streaks <- sim.hour.1 %>%
+      filter(date %in% streak.dates)
+  }else if(type.event == 'hourly peak'){
+    streak.dates <- expand_datetimes(aux.streak$datetime, skip.after = 0)
+    streak.dates.df <- data.frame(
+      datetime = as.POSIXct(unlist(streak.dates), tz = 'UTC')
+    )
+    sim.hour.1.streaks <- streak.dates.df %>%
+      inner_join(sim.hour.1, by = 'datetime')
+    
+    sim.hour.1.streaks <- sim.hour.1.streaks[, c(1, as.numeric(aux.streak$sim_num) + 1)]
+  }else if(type.event == 'hourly rainy spell'){
+    streak.dates <- expand_datetimes(aux.streak$datetime, 
+                                     skip.after = streak.length.h - 1)
+    streak.dates.df <- data.frame(
+      datetime = as.POSIXct(unlist(streak.dates), tz = 'UTC')
+    )
+    sim.hour.1.streaks <- streak.dates.df %>%
+      inner_join(sim.hour.1, by = 'datetime')
+    
+    sim.hour.1.streaks <- sim.hour.1.streaks[, c(1, as.numeric(aux.streak$sim_num) + 1)]
+  }else{
+    stop("type.event not valid. Try 'daily rainy spell', 'hourly rainy spell' or 'hourly peak'.")
+  }
+  
   
   # in case we want to see other station
   if (!is.null(station.2) & !is.null(full.sim.2)){
     sim.hour.2 <- full.sim.2$sim.hour
     colnames(sim.hour.2) <- paste0(station.2, '.', 1:n.sim.h)
     sim.hour.2$date <- rep(date, each = 24)
+    sim.hour.2 <- sim.hour.2 %>%
+      mutate(
+        datetime = seq(
+          from = as.POSIXct(paste0(years[1], "-01-01 00:00:00"), tz = "UTC"),
+          to   = as.POSIXct(paste0(years[2], "-12-31 23:00:00"), tz = "UTC"),
+          by   = "hour"
+        )
+      )
     
-    sim.hour.2.streaks <- sim.hour.2 %>%
-      filter(date %in% streak.dates)
+    
+    if (type.event == 'daily rainy spell'){
+      sim.hour.2.streaks <- sim.hour.2 %>%
+        filter(date %in% streak.dates)
+    }else if (type.event == 'hourly peak' | type.event == 'hourly rainy spell'){
+      sim.hour.2.streaks <- streak.dates.df %>%
+        inner_join(sim.hour.2, by = 'datetime')
+      sim.hour.2.streaks <- sim.hour.2.streaks[, c(1, as.numeric(aux.streak$sim_num) + 1)]
+    }else{
+      stop("type.event not valid. Try 'daily rainy spell', 'hourly rainy spell' or 'hourly peak'.")
+    }
+    
   }
   
   streaks.list <- list()
-  for (i in seq(1, length(streak.dates), by = streak.length)){
-    streak <- sim.hour.1.streaks %>%
-      filter(
-        date %in% streak.dates[i + 1 * 0:(streak.length - 1)]
-      ) %>%
-      select(date, everything())
-    
-    #streaks in those dates for the second station
-    if (!is.null(station.2) & !is.null(full.sim.2)){
-      streak.2 <- sim.hour.2.streaks %>%
+  #aqui solo vamos a tener una simulacion por evento
+  if (type.event == 'daily rainy spell'){
+    for (i in seq(1, length(streak.dates), by = streak.length)){
+      streak <- sim.hour.1.streaks %>%
         filter(
           date %in% streak.dates[i + 1 * 0:(streak.length - 1)]
         ) %>%
-        select(-date)
-      streak <- cbind(streak, streak.2)
-    }else{
-      streak <- streak
-    }
-    
-    streak$date <- 0 + 3600 * 0:(streak.length * 24 - 1)
-    
-    streaks.list[[paste(streak.dates[i + 1 * 0:(streak.length - 1)], 
-                        collapse = '--')]] <- streak
-    
-    if (plot == TRUE){
-      plot(streak[, 2], type = 'b', pch = 19, cex = 0.5,
-           ylim = c(0, max(streak[, 2:ncol(streak)])),
-           xlab = 'Hour',
-           ylab = 'Rain (mm)',
-           main = paste0(stations, ': ', paste(streak.dates[i + 1 * 0:(streak.length - 1)], 
-                                              collapse = '--'),
-                         '. Total rain:', round(aux.streak$streak[(i - 1) %/% streak.length + 1], 3))
-      )
-      #date is the first column
-      for(j in 2:n.sim.h){
-        lines(streak[, j + 1], type = 'b', pch = 19, cex = 0.5)
-      }
+        select(date, everything(), -datetime)
       
-      #plot lines of second station
+      #streaks in those dates for the second station
       if (!is.null(station.2) & !is.null(full.sim.2)){
-        for (k in 1:n.sim.h){
-          lines(streak[, paste0(station.2, '.', k)], type = 'b', 
-                pch = 19, cex = 0.5, col = 'red')
-        }
-        #legend
-        legend('topleft', legend = c(station.1, station.2),
-              col = c('black', 'red'), lty = 1)
-      }
-      #observed in that day
-      if (!is.null(data.h)){
-        obs.streak <- data.h %>%
+        streak.2 <- sim.hour.2.streaks %>%
           filter(
-            date %in% streak.dates[c(i, i+1)]
-          )
-        lines(obs.streak[[paste0(station.1, '.p')]], col = 'orange',
-              type = 'b', pch = 19, cex = 0.75)
+            date %in% streak.dates[i + 1 * 0:(streak.length - 1)]
+          ) %>%
+          select(-c(date, datetime))
+        streak <- cbind(streak, streak.2)
+      }else{
+        streak <- streak
       }
       
-      abline(v = 23 + 24 * 0:(streak.length - 2), col = 'blue')
+      streak$date <- 0 + 3600 * 0:(streak.length * 24 - 1)
+      
+      streaks.list[[paste(streak.dates[i + 1 * 0:(streak.length - 1)], 
+                          collapse = '--')]] <- streak
+      
+      if (plot == TRUE){
+        plot(streak[, 2], type = 'b', pch = 19, cex = 0.5,
+             ylim = c(0, max(streak[, 2:ncol(streak)])),
+             xlab = 'Hour',
+             ylab = 'Rain (mm)',
+             main = paste0(stations, ': ', paste(streak.dates[i + 1 * 0:(streak.length - 1)], 
+                                                 collapse = '--'),
+                           '. Total rain:', round(aux.streak$streak[(i - 1) %/% streak.length + 1], 3))
+        )
+        #date is the first column
+        for(j in 2:n.sim.h){
+          lines(streak[, j + 1], type = 'b', pch = 19, cex = 0.5)
+        }
+        
+        #plot lines of second station
+        if (!is.null(station.2) & !is.null(full.sim.2)){
+          for (k in 1:n.sim.h){
+            lines(streak[, paste0(station.2, '.', k)], type = 'b', 
+                  pch = 19, cex = 0.5, col = 'red')
+          }
+          #legend
+          legend('topleft', legend = c(station.1, station.2),
+                 col = c('black', 'red'), lty = 1)
+        }
+        #observed in that day
+        if (!is.null(data.h)){
+          obs.streak <- data.h %>%
+            filter(
+              date %in% streak.dates[c(i, i+1)]
+            )
+          lines(obs.streak[[paste0(station.1, '.p')]], col = 'orange',
+                type = 'b', pch = 19, cex = 0.75)
+        }
+        
+        abline(v = 23 + 24 * 0:(streak.length - 2), col = 'blue')
+        
+      }
       
     }
-    
   }
+  else if (type.event == 'hourly peak' | type.event == 'hourly rainy spell'){
+    for (i in 1:length(streak.dates)){
+      streak <- sim.hour.1.streaks %>%
+        filter(
+          datetime %in% streak.dates[[i]]
+        ) %>%
+        select(datetime, everything()) %>%
+        distinct()
+      
+      #streaks in those dates for the second station
+      if (!is.null(station.2) & !is.null(full.sim.2)){
+        streak.2 <- sim.hour.2.streaks %>%
+          filter(
+            datetime %in% streak.dates[[i]]
+          ) %>%
+          distinct() %>%
+          select(-datetime) 
+        streak <- cbind(streak, streak.2)
+        streak <- streak[, c(1, i + 1, i + n.events + 1)]
+      }else{
+        streak <- streak[, c(1, i + 1)]
+      }
+      
+      streak$datetime <- 0 + 3600 * 0:(length(streak.dates[[1]]) - 1)
+      
+      streaks.list[[paste0(streak.length.h, '.', gsub(' ', '.', type.event), '.', 
+                           aux.streak[i, 'datetime'],
+                           '.sim.', aux.streak[i, 'sim_num'])]] <- streak
+      
+      
+      if (plot == TRUE){
+        plot(streak[, 2], type = 'b', pch = 19, cex = 0.5,
+             ylim = c(0, max(streak[, 2:ncol(streak)])),
+             xlab = 'Hour',
+             ylab = 'Rain (mm)',
+             main = paste0(stations, ': ', paste0(streak.length.h, '.', gsub(' ', '.', type.event), '.', 
+                                                  aux.streak[i, 'datetime']),
+                           '. Total rain:', round(aux.streak[i, 'streak'], 3))
+        )
+        
+        #plot lines of second station
+        if (!is.null(station.2) & !is.null(full.sim.2)){
+          lines(streak[, 3], type = 'b', 
+                pch = 19, cex = 0.5, col = 'red')
+          
+          #legend
+          legend('topleft', legend = c(station.1, station.2),
+                 col = c('black', 'red'), lty = 1)
+        }
+      }
+      
+    }
+  }else{
+    stop("type.event not valid. Try 'daily rainy spell', 'hourly rainy spell' or 'hourly peak'.")
+  }
+
   
   return(streaks.list)
 }
 
+par(mfrow = c(3, 2))
+streaks.hourly.peak.A126.A287.2014.2015 <- streaks.df(data.streak = NULL,
+                                                      stations = 'A126 + A287',
+                                                      years = c(2014, 2015),
+                                                      full.sim.sum = full.sim.sum,
+                                                      station.1 = 'A126',
+                                                      full.sim.1 = full.simulations$full.sim.2014.2015.MHQ.thresh,
+                                                      streak.length = 2,
+                                                      n.events = 6,
+                                                      data.h = NULL,
+                                                      n.sim.h = 20,
+                                                      plot = T,
+                                                      station.2 = 'A287',
+                                                      full.sim.2 = full.simulations$full.sim.A287.2014.2015.MHQ.thresh,
+                                                      type.event = 'hourly peak',
+                                                      streak.length.h = NULL)
+streaks.4.hours.A126.A287.2014.2015 <- streaks.df(data.streak = NULL,
+                                                  stations = 'A126 + A287',
+                                                  years = c(2014, 2015),
+                                                  full.sim.sum = full.sim.sum,
+                                                  station.1 = 'A126',
+                                                  full.sim.1 = full.simulations$full.sim.2014.2015.MHQ.thresh,
+                                                  streak.length = 2,
+                                                  n.events = 6,
+                                                  data.h = NULL,
+                                                  n.sim.h = 20,
+                                                  plot = T,
+                                                  station.2 = 'A287',
+                                                  full.sim.2 = full.simulations$full.sim.A287.2014.2015.MHQ.thresh,
+                                                  type.event = 'hourly rainy spell',
+                                                  streak.length.h = 4)
+streaks.6.hours.A126.A287.2014.2015 <- streaks.df(data.streak = NULL,
+                                                  stations = 'A126 + A287',
+                                                  years = c(2014, 2015),
+                                                  full.sim.sum = full.sim.sum,
+                                                  station.1 = 'A126',
+                                                  full.sim.1 = full.simulations$full.sim.2014.2015.MHQ.thresh,
+                                                  streak.length = 2,
+                                                  n.events = 6,
+                                                  data.h = NULL,
+                                                  n.sim.h = 20,
+                                                  plot = T,
+                                                  station.2 = 'A287',
+                                                  full.sim.2 = full.simulations$full.sim.A287.2014.2015.MHQ.thresh,
+                                                  type.event = 'hourly rainy spell',
+                                                  streak.length.h = 6)
+streaks.8.hours.A126.A287.2014.2015 <- streaks.df(data.streak = NULL,
+                                                  stations = 'A126 + A287',
+                                                  years = c(2014, 2015),
+                                                  full.sim.sum = full.sim.sum,
+                                                  station.1 = 'A126',
+                                                  full.sim.1 = full.simulations$full.sim.2014.2015.MHQ.thresh,
+                                                  streak.length = 2,
+                                                  n.events = 6,
+                                                  data.h = NULL,
+                                                  n.sim.h = 20,
+                                                  plot = T,
+                                                  station.2 = 'A287',
+                                                  full.sim.2 = full.simulations$full.sim.A287.2014.2015.MHQ.thresh,
+                                                  type.event = 'hourly rainy spell',
+                                                  streak.length.h = 8)
+
+
 par(mfrow = c(3, 1))
 streaks.2day.A126.A287.2014.2015 <- streaks.df(data.streak = NULL,
-                                          station = 'A126 + A287',
+                                          stations = 'A126 + A287',
                                           years = c(2014, 2015),
                                           full.sim.sum = full.sim.sum,
                                           station.1 = 'A126',
                                           full.sim.1 = full.simulations$full.sim.2014.2015.MHQ.thresh,
                                           streak.length = 2,
-                                          n.days = 3,
+                                          n.events = 3,
                                           data.h = NULL,
                                           n.sim.h = 20,
                                           plot = T,
                                           station.2 = 'A287',
-                                          full.sim.2 = full.simulations$full.sim.A287.2014.2015.MHQ.thresh)
+                                          full.sim.2 = full.simulations$full.sim.A287.2014.2015.MHQ.thresh,
+                                          type.event = 'daily rainy spell')
 
 streaks.3day.A126.A287.2014.2015 <- streaks.df(data.streak = NULL,
                                                station = 'A126 + A287',
@@ -4797,7 +5017,7 @@ streaks.3day.A126.A287.2014.2015 <- streaks.df(data.streak = NULL,
                                                station.1 = 'A126',
                                                full.sim.1 = full.simulations$full.sim.2014.2015.MHQ.thresh,
                                                streak.length = 3,
-                                               n.days = 3,
+                                               n.events = 3,
                                                data.h = NULL,
                                                n.sim.h = 20,
                                                plot = T,
@@ -4806,64 +5026,120 @@ streaks.3day.A126.A287.2014.2015 <- streaks.df(data.streak = NULL,
 
 
 # rachas basadas en simulaciones horarias
-years <- c(2014, 2015)
-n.sim.h <- 20
-sim.hour <- full.sim.sum$sim.hour
-
-sim.hour <- sim.hour %>%
-  mutate(
-    datetime = seq(
-      from = as.POSIXct(paste0(years[1], "-01-01 00:00:00"), tz = "UTC"),
-      to   = as.POSIXct(paste0(years[2], "-12-31 23:00:00"), tz = "UTC"),
-      by   = "hour"
-    )
-  )
-
-#peak hours
 library(tidyr)
-peak.hours <- sim.hour %>%
-  pivot_longer(
-    cols = -datetime,
-    names_to = "variable",
-    values_to = "value"
-  ) %>%
-  group_by(variable) %>%
-  summarise(
-    max = max(value, na.rm = TRUE),
-    datetime_max = datetime[which.max(value)]
-  ) %>%
-  arrange(desc(max))
-
-
-#accumulated rain in hours
-n.hours <- 4
 library(zoo)
-acc.hour <- sim.hour %>%
-  transmute(
-    datetime,
-    across(
-      .cols = -datetime,
-      .fns = ~ rollapply(., width = 4, FUN = sum, align = "left", fill = NA),
-      .names = "{.col}"
+hourly.ext.event <- function(years, sim, type, 
+                             streak.length.h = NULL, n.events){
+  sim.hour <- sim$sim.hour
+  
+  sim.hour <- sim.hour %>%
+    mutate(
+      datetime = seq(
+        from = as.POSIXct(paste0(years[1], "-01-01 00:00:00"), tz = "UTC"),
+        to   = as.POSIXct(paste0(years[2], "-12-31 23:00:00"), tz = "UTC"),
+        by   = "hour"
+      )
     )
-  ) %>%
-  na.omit()
+  
+  #peak hours
+  if (type == 'peak'){
+    df <- sim.hour %>%
+      pivot_longer(
+        cols = -datetime,
+        names_to = "variable",
+        values_to = "value"
+      ) %>%
+      group_by(variable) %>%
+      summarise(
+        max = max(value, na.rm = TRUE),
+        datetime_max = datetime[which.max(value)]
+      ) %>%
+      arrange(desc(max)) %>%
+      as.data.frame
+    
+  }else if (type == 'rainy spell'){
+    #accumulated rain in hours
+    df <- sim.hour %>%
+      transmute(
+        datetime,
+        across(
+          .cols = -datetime,
+          .fns = ~ rollapply(., width = streak.length.h, 
+                             FUN = sum, align = "left", fill = NA),
+          .names = "{.col}"
+        )
+      ) %>%
+      na.omit()
+    
+    df <- df %>%
+      pivot_longer(
+        cols = -datetime,
+        names_to = 'variable',
+        values_to = 'value'
+      ) %>%
+      group_by(variable) %>%
+      summarise(
+        max = max(value, na.rm = T),
+        datetime_max = datetime[which.max(value)]
+      ) %>% 
+      arrange(desc(max)) %>%
+      as.data.frame()
+    
+  }else{
+    stop('Type not valid. Try peak or rainy spell')
+  }
+  # select the number of extreme events
+  df <- df[1:n.events, ]
+  
+  #format for streaks.df function
+  df <- df %>%
+    rowwise() %>% 
+    mutate(
+      y = sim.hour %>%
+        filter(datetime == datetime_max) %>%
+        pull(!!sym('variable'))
+    ) %>%
+    ungroup() %>%
+    mutate(
+      date = as.Date(datetime_max),
+      sim_num = gsub("y\\.sim\\.", "", variable)
+      ) %>% 
+    rename(streak = max, datetime = datetime_max) %>%
+    select(date, y, streak, datetime, sim_num) %>%
+    as.data.frame()
+  return(df)
+}
 
-acc.hour.max <- acc.hour %>%
-  pivot_longer(
-    cols = -datetime,
-    names_to = 'variable',
-    values_to = 'value'
-  ) %>%
-  group_by(variable) %>%
-  summarise(
-    max.acc = max(value, na.rm = T),
-    datetime_max = datetime[which.max(value)]
-  ) %>% 
-  arrange(desc(max.acc))
 
-# select the number of extreme events
+basura <- hourly.ext.event(years = c(2014, 2015), full.sim.sum, type = 'rainy spell', n.events = 3, streak.length.h = 4)
+basura
+expand_datetimes <- function(datetimes, skip.after = 0,
+                             n.hours = 24) {
+  
+  datetimes <- as.POSIXct(datetimes)
+  
+  lapply(datetimes, function(dt) {
+    
+    # Horas ANTERIORES: dt - 1h, dt - 2h, ..., dt - n.before h
+    before <- dt - seq_len(n.hours) * 3600
+    
+    # Horas POSTERIORES:
+    #   - saltamos skip.after horas
+    #   - incluimos n.after horas a partir de ahí
+    if (skip.after == 0){
+      medium <- dt
+    }else{
+      medium <- dt + 3600 * 0:(skip.after)
+    }
+    
+    after <- dt + (skip.after + seq_len(n.hours)) * 3600
+    
+    # Devolvemos vector combinado ordenado
+    sort(c(before, medium, after))
+  })
+}
 
+expand_datetimes(basura$datetime[1], skip.after = 4 - 1)
 
 # pasada a documento de texto
 streak.data.to.txt <- function(streak.list, folder, station.ref, sep = '\t'){
@@ -4875,14 +5151,14 @@ streak.data.to.txt <- function(streak.list, folder, station.ref, sep = '\t'){
     name <- names(streak.list)[i]
     name <- gsub('--', '_', name)
     name <- gsub('-', '.', name)
-    
+    name <- gsub("([0-9]{2}):[0-9]{2}:[0-9]{2}", "\\1h", name)
     file.name <- paste0(folder, '/', station.ref, '_', name, '.txt')
     write.table(file, file = file.name, sep = sep, row.names = FALSE)
   }
   
 }
 
-streak.data.to.txt(streaks.3day.A126.A287.2014.2015, 
+streak.data.to.txt(streaks.8.hours.A126.A287.2014.2015, 
                    folder = 'datos_nacho', 
                    station.ref = 'A126_A287')
 
