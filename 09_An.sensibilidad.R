@@ -4253,61 +4253,6 @@ for (station in estaciones){
   
 }
 
-# simulation of 100 years
-set.seed(05052002)
-sim.day.A126.2013.2022 <- RAIN.GENERATOR.og(station = 'A126',
-                                            data.h = df_hours, 
-                                            data.day = df_days,
-                                            period = per.comun.day,
-                                            models.list = common.models.final,
-                                            data.mq = X.MDQ,
-                                            mo = 'MDO',
-                                            mq = 'MDQ',
-                                            ocurrence = TRUE,
-                                            years = c(2013:2022),
-                                            n.sim = 10,
-                                            type = 'day')
-
-sim.day.A126.2013.2022 <- sim.day.A126.2013.2022[, paste0('y.sim.', 1:10)]
-v.sim.day.A126.2013.2022 <- unlist(sim.day.A126.2013.2022)
-quantile(v.sim.day.A126.2013.2022, probs = c(0.9, 0.95, 0.99))
-quantile(v.sim.day.A126.2013.2022[v.sim.day.A126.2013.2022 > 0], 
-         probs = c(0.9, 0.95, 0.99))
-
-set.seed(05052002)
-sim.day.A287.2013.2022 <- RAIN.GENERATOR.og(station = 'A287',
-                                            data.h = df_hours, 
-                                            data.day = df_days,
-                                            period = per.comun.day,
-                                            models.list = common.models.final,
-                                            data.mq = X.MDQ,
-                                            mo = 'MDO',
-                                            mq = 'MDQ',
-                                            ocurrence = TRUE,
-                                            years = c(2013:2022),
-                                            n.sim = 10,
-                                            type = 'day')
-sim.day.A287.2013.2022 <- sim.day.A287.2013.2022[, paste0('y.sim.', 1:10)]
-v.sim.day.A287.2013.2022 <- unlist(sim.day.A287.2013.2022)
-quantile(v.sim.day.A287.2013.2022, probs = c(0.9, 0.95, 0.99))
-quantile(v.sim.day.A287.2013.2022[v.sim.day.A287.2013.2022 > 0], 
-         probs = c(0.9, 0.95, 0.99))
-#sum of simulations
-sim.day.A126.A287.2013.2022 <- sim.day.A126.2013.2022 + sim.day.A287.2013.2022
-v.sim.day.A126.A287.2013.2022 <- unlist(sim.day.A126.A287.2013.2022)
-quantile(v.sim.day.A126.A287.2013.2022, probs = c(0.9, 0.95, 0.99))
-quantile(v.sim.day.A126.A287.2013.2022[v.sim.day.A126.A287.2013.2022 > 0], 
-         probs = c(0.9, 0.95, 0.99))
-
-
-sim.10.years <- list(
-  A126 = sim.day.A126.2013.2022,
-  A287 = sim.day.A287.2013.2022,
-  A126.A287 = sim.day.A126.A287.2013.2022
-)
-qsave(sim.10.years, 'sim.10.years.qs')
-
-
 #only for 1 simlation of day
 full.simulation <- function(station, data.h, data.day, period.h, period.day, 
                             models.list, data.mq.h, data.mq.day,
@@ -4657,7 +4602,7 @@ sum.simulations <- function(simulations, n.years, n.sim.h, n.sim.day, type){
   if (type == 'both'){
     sim.list <- list(
       sim.day = sim.day.sum,
-      sim.hour = sim.day.hour
+      sim.hour = sim.hour.sum
     )
   }else if (type == 'day'){
     sim.list <- list(
@@ -4665,7 +4610,7 @@ sum.simulations <- function(simulations, n.years, n.sim.h, n.sim.day, type){
     )
   }else if (type == 'hour'){
     sim.list <- list(
-      sim.hour = sim.day.hour
+      sim.hour = sim.hour.sum
     )
   }
   
@@ -4677,10 +4622,9 @@ full.sim.sum <- sum.simulations(list(full.simulations$full.sim.2014.2015.MHQ.thr
                                ),
                           n.years = 2, 
                           n.sim.h = 20, 
-                          n.sim.day = 1)
-full.sim.10.years <- sum.simulations(list(
-  sim.10.years$A126
-))
+                          n.sim.day = 1,
+                          type = 'both')
+
 
 rain.streaks.df(data= NULL, 'A126', c(2014, 2015), full.sim.sum, 2, 3)
 
@@ -5246,5 +5190,280 @@ streak.data.to.txt(streaks.8.hours.A126.A287.2014.2015,
                    folder = 'datos_nacho', 
                    station.ref = 'A126_A287')
 
+#----100 years simulation & extreme events----
+# simulation of 100 years
+set.seed(05052002)
+sim.day.A126.2013.2022 <- RAIN.GENERATOR.og(station = 'A126',
+                                            data.h = df_hours, 
+                                            data.day = df_days,
+                                            period = per.comun.day,
+                                            models.list = common.models.final,
+                                            data.mq = X.MDQ,
+                                            mo = 'MDO',
+                                            mq = 'MDQ',
+                                            ocurrence = TRUE,
+                                            years = c(2013:2022),
+                                            n.sim = 10,
+                                            type = 'day')
 
- 
+sim.day.A126.2013.2022 <- sim.day.A126.2013.2022[, paste0('y.sim.', 1:10)]
+v.sim.day.A126.2013.2022 <- unlist(sim.day.A126.2013.2022)
+quantile(v.sim.day.A126.2013.2022, probs = c(0.9, 0.95, 0.99))
+quantile(v.sim.day.A126.2013.2022[v.sim.day.A126.2013.2022 > 0], 
+         probs = c(0.9, 0.95, 0.99))
+
+set.seed(05052002)
+sim.day.A287.2013.2022 <- RAIN.GENERATOR.og(station = 'A287',
+                                            data.h = df_hours, 
+                                            data.day = df_days,
+                                            period = per.comun.day,
+                                            models.list = common.models.final,
+                                            data.mq = X.MDQ,
+                                            mo = 'MDO',
+                                            mq = 'MDQ',
+                                            ocurrence = TRUE,
+                                            years = c(2013:2022),
+                                            n.sim = 10,
+                                            type = 'day')
+sim.day.A287.2013.2022 <- sim.day.A287.2013.2022[, paste0('y.sim.', 1:10)]
+v.sim.day.A287.2013.2022 <- unlist(sim.day.A287.2013.2022)
+quantile(v.sim.day.A287.2013.2022, probs = c(0.9, 0.95, 0.99))
+quantile(v.sim.day.A287.2013.2022[v.sim.day.A287.2013.2022 > 0], 
+         probs = c(0.9, 0.95, 0.99))
+#sum of simulations
+sim.day.A126.A287.2013.2022 <- sim.day.A126.2013.2022 + sim.day.A287.2013.2022
+v.sim.day.A126.A287.2013.2022 <- unlist(sim.day.A126.A287.2013.2022)
+quantile(v.sim.day.A126.A287.2013.2022, probs = c(0.9, 0.95, 0.99))
+quantile(v.sim.day.A126.A287.2013.2022[v.sim.day.A126.A287.2013.2022 > 0], 
+         probs = c(0.9, 0.95, 0.99))
+
+
+sim.10.years <- list(
+  A126 = sim.day.A126.2013.2022,
+  A287 = sim.day.A287.2013.2022,
+  A126.A287 = sim.day.A126.A287.2013.2022
+)
+qsave(sim.10.years, 'sim.10.years.qs')
+
+#rainy spells based on perc
+library(tidyr)
+rain.streaks.df.2 <- function(station, years, full.sim, 
+                              streak.length, perc){
+  
+  sim.day <- full.sim[[station]]
+  
+  dates <- seq(
+    from = as.Date(paste0(years[1], "-01-01")),
+    to   = as.Date(paste0(years[length(years)], "-12-31")),
+    by   = "day"
+  )
+  
+  dates <- dates[format(dates, '%m-%d') != '02-29']
+  
+  sim.day$date <- dates
+  # internal function to calculate streaks
+  streak <- function(x, k){
+    out <- rep(0, length(x))
+    
+    for(i in 1:(length(x) - k + 1)){
+      tramo <- x[i:(i+k-1)]
+      
+      # condición segura (sin NAs)
+      cond <- all(!is.na(tramo) & tramo > 0)
+      
+      if(cond){
+        out[i] <- sum(tramo, na.rm = TRUE)
+      } else {
+        out[i] <- 0
+      }
+    }
+    
+    return(out)
+  }
+  
+  # Añadir columnas de rachas solicitadas
+  sim.day <- sim.day %>%
+    mutate(
+      across(
+        .cols = -date,                      # todas menos 'date'
+        .fns  = ~ streak(.x, streak.length), 
+        .names = "streak.{.col}"            # nombres nuevos
+      )
+    )
+  
+  streak.cols <- sim.day[, grep('streak|date', names(sim.day))]
+  v.sim.day <- streak.cols %>%
+    pivot_longer(
+      cols = starts_with("streak"),
+      names_to = "streak_col",
+      values_to = "value"
+    )
+  
+  thresh <- quantile(v.sim.day$value[v.sim.day$value > 0], probs = perc)
+  
+  result <- v.sim.day[v.sim.day$value > thresh, ] %>% as.data.frame()
+  
+  result <- result %>%
+    pivot_wider(
+      names_from = date,
+      values_from  = value
+    ) %>% 
+    as.data.frame()
+  result$streak_col <- gsub('streak.', '', result$streak_col)
+  
+  return(result)
+}
+
+basura <- rain.streaks.df.2('A126.A287', 2013:2022, sim.10.years, 2, 0.99)
+
+#all 0 but the dates and next day with their real values
+expand_dates <- function(date, streak.length) {
+  as.Date(
+    unlist(
+      lapply(date, function(d) d + 0:(streak.length - 1))
+    )
+  )
+}
+
+sim.day.streaks <- function(years, sim.ref, rainy.spells){
+  dates <- seq(
+    from = as.Date(paste0(years[1], "-01-01")),
+    to   = as.Date(paste0(years[length(years)], "-12-31")),
+    by   = "day"
+  )
+  dates <- dates[format(dates, '%m-%d') != '02-29']
+  
+  big.events.1 <- data.frame(matrix(0, 
+                                         ncol = ncol(sim.ref),
+                                         nrow = nrow(sim.ref)))
+  
+  names(big.events.1) <- names(sim.ref) 
+  big.events.1$date <- dates
+  
+  #add date to original simulation to know form where to fill
+  sim.ref$date <- dates
+  
+  
+  for (i in 1:nrow(rainy.spells)){
+    name <- rainy.spells$streak_col[i]
+    aux <- rainy.spells[i, ]
+    dates.aux <- names(rainy.spells[, 2:ncol(rainy.spells)])
+    dates.aux <- as.Date(dates.aux[which(!is.na(aux[, 2:ncol(rainy.spells)]))])
+    
+    dates.to.fill <- unique(expand_dates(dates.aux, 2))
+    
+    values.fill <- sim.ref %>% 
+      filter(
+        date %in% dates.to.fill
+      ) %>% 
+      select(!!sym(name))
+    
+    
+    big.events.1[big.events.1$date %in% dates.to.fill, name] <- values.fill
+    
+    
+  }
+  
+  return(big.events.1)
+}
+
+rainy.spell.48.h <- rain.streaks.df.2('A126.A287', 2013:2022, sim.10.years, 2, 0.99)
+summary(unlist(rainy.spell.48.h[, 2:ncol(rainy.spell.48.h)]))
+
+
+A126.big.events.1 <- sim.day.streaks(2013:2022, sim.day.A126.2013.2022, rainy.spell.48.h)
+A287.big.events.1 <- sim.day.streaks(2013:2022, sim.day.A287.2013.2022, rainy.spell.48.h)
+
+
+#now we only compute different rainy simulations
+#preprocessing
+sim.10.years.big.events.1.A126 <- list()
+sim.10.years.big.events.1.A287 <- list()
+
+dates <- seq(
+  from = as.Date(paste0(years[1], "-01-01")),
+  to   = as.Date(paste0(years[length(years)], "-12-31")),
+  by   = "day"
+)
+dates <- dates[format(dates, '%m-%d') != '02-29']
+dates <- rep(dates, each = 24)
+
+#event no. 1st is the maximum
+vals <- unlist(rainy.spell.48.h[, 2:ncol(rainy.spell.48.h)])
+vals <- vals[!is.na(vals)]
+vals <- sort(vals, decreasing = TRUE)
+length(unique(vals))
+
+
+for (i in 1:nrow(rainy.spell.48.h)){
+  name <- rainy.spell.48.h[i, 1]
+  sim.day <- A126.big.events.1[, name]
+  set.seed(05052002)
+  sim.hour.A126 <- RAIN.GENERATOR.og(station = 'A126',
+                                data.h = df_hours, 
+                                data.day = df_days,
+                                period = per.comun.h,
+                                models.list = common.models.final,
+                                data.mq = X.MHQ,
+                                mo = 'MHO',
+                                mq = 'MHQ.thresh',
+                                ocurrence = TRUE,
+                                years = 2013:2022,
+                                n.sim = 100, #numero mayor de 1
+                                type = 'hour',
+                                day.simulation = sim.day)
+  
+  sim.day <- A287.big.events.1[, name]
+  set.seed(05052002)
+  sim.hour.A287 <- RAIN.GENERATOR.og(station = 'A287',
+                                     data.h = df_hours, 
+                                     data.day = df_days,
+                                     period = per.comun.h,
+                                     models.list = common.models.final,
+                                     data.mq = X.MHQ,
+                                     mo = 'MHO',
+                                     mq = 'MHQ.thresh',
+                                     ocurrence = TRUE,
+                                     years = 2013:2022,
+                                     n.sim = 100, #numero mayor de 1
+                                     type = 'hour',
+                                     day.simulation = sim.day)
+  
+  
+  aux <- rainy.spells[i, ]
+  dates.aux <- names(rainy.spells[, 2:ncol(rainy.spells)])
+  dates.aux <- as.Date(dates.aux[which(!is.na(aux[, 2:ncol(rainy.spells)]))])
+  n.events <- length(dates.aux)
+  
+  vals.events <- aux[which(!is.na(aux[, 2:ncol(rainy.spells)])) + 1]
+  events.rank <- match(vals.events, vals)
+  
+  dates.to.fill <- expand_dates(dates.aux, 2)
+  
+  #dates in simulation
+  sim.hour.A126$date <- dates
+  sim.hour.A287$date <- dates
+  #select events and save apart
+  for (j in 1:n.events){
+    event.name <- paste0('event.', events.rank[j])
+    event.dates <- dates.to.fill[c(2 * j - 1, 2 * j)]
+    sim.10.years.big.events.1.A126[[event.name]] <- sim.hour.A126[sim.hour.A126$date %in% event.dates, ]
+    sim.10.years.big.events.1.A287[[event.name]] <- sim.hour.A287[sim.hour.A287$date %in% event.dates, ]
+  }
+}
+big.events.1 <- list(
+  big.events.1.A126 = sim.10.years.big.events.1.A126,
+  big.events.1.A287 = sim.10.years.big.events.1.A287)
+qsave(big.events.1, 'big.events.1.qs')
+big.events.1 <- qread('big.events.1.qs')
+
+#grpah of 10 simulations with highest hourly peak
+basura <- big.events.1$big.events.1.A126$event.2[, 1]
+basura2 <- big.events.1$big.events.1.A287$event.2[, 1]
+sum(basura)
+sum(basura2)
+sum(basura2) + sum(basura)
+
+
+plot(big.events.1$big.events.1.A126$event.2[, 1], type = 'b', cex = 0.5)
+plot(big.events.1$big.events.1.A287$event.2[, 1], type = 'b', cex = 0.5, col = 'red')
