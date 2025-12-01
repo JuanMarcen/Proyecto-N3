@@ -4253,6 +4253,61 @@ for (station in estaciones){
   
 }
 
+# simulation of 100 years
+set.seed(05052002)
+sim.day.A126.2013.2022 <- RAIN.GENERATOR.og(station = 'A126',
+                                            data.h = df_hours, 
+                                            data.day = df_days,
+                                            period = per.comun.day,
+                                            models.list = common.models.final,
+                                            data.mq = X.MDQ,
+                                            mo = 'MDO',
+                                            mq = 'MDQ',
+                                            ocurrence = TRUE,
+                                            years = c(2013:2022),
+                                            n.sim = 10,
+                                            type = 'day')
+
+sim.day.A126.2013.2022 <- sim.day.A126.2013.2022[, paste0('y.sim.', 1:10)]
+v.sim.day.A126.2013.2022 <- unlist(sim.day.A126.2013.2022)
+quantile(v.sim.day.A126.2013.2022, probs = c(0.9, 0.95, 0.99))
+quantile(v.sim.day.A126.2013.2022[v.sim.day.A126.2013.2022 > 0], 
+         probs = c(0.9, 0.95, 0.99))
+
+set.seed(05052002)
+sim.day.A287.2013.2022 <- RAIN.GENERATOR.og(station = 'A287',
+                                            data.h = df_hours, 
+                                            data.day = df_days,
+                                            period = per.comun.day,
+                                            models.list = common.models.final,
+                                            data.mq = X.MDQ,
+                                            mo = 'MDO',
+                                            mq = 'MDQ',
+                                            ocurrence = TRUE,
+                                            years = c(2013:2022),
+                                            n.sim = 10,
+                                            type = 'day')
+sim.day.A287.2013.2022 <- sim.day.A287.2013.2022[, paste0('y.sim.', 1:10)]
+v.sim.day.A287.2013.2022 <- unlist(sim.day.A287.2013.2022)
+quantile(v.sim.day.A287.2013.2022, probs = c(0.9, 0.95, 0.99))
+quantile(v.sim.day.A287.2013.2022[v.sim.day.A287.2013.2022 > 0], 
+         probs = c(0.9, 0.95, 0.99))
+#sum of simulations
+sim.day.A126.A287.2013.2022 <- sim.day.A126.2013.2022 + sim.day.A287.2013.2022
+v.sim.day.A126.A287.2013.2022 <- unlist(sim.day.A126.A287.2013.2022)
+quantile(v.sim.day.A126.A287.2013.2022, probs = c(0.9, 0.95, 0.99))
+quantile(v.sim.day.A126.A287.2013.2022[v.sim.day.A126.A287.2013.2022 > 0], 
+         probs = c(0.9, 0.95, 0.99))
+
+
+sim.10.years <- list(
+  A126 = sim.day.A126.2013.2022,
+  A287 = sim.day.A287.2013.2022,
+  A126.A287 = sim.day.A126.A287.2013.2022
+)
+qsave(sim.10.years, 'sim.10.years.qs')
+
+
 #only for 1 simlation of day
 full.simulation <- function(station, data.h, data.day, period.h, period.day, 
                             models.list, data.mq.h, data.mq.day,
@@ -4295,6 +4350,10 @@ full.simulation <- function(station, data.h, data.day, period.h, period.day,
     sim.hour = sim.hour
   ))
 }
+
+
+
+
 
 full.sim.A287.2014.2015.MHQ.thresh <- full.simulation(station = 'A287',
                                         data.h = df_hours, 
@@ -4574,20 +4633,43 @@ overlap(list (basura2, X$A126.p))
 #----RACHAS----
 # ravhas basadas en simulacion diaria
 #sum of simulations to obtain a global simulation of the region
-sum.simulations <- function(simulations, n.years, n.sim.h, n.sim.day){ 
-  sim.day.sum <- matrix(0, ncol = n.sim.day + 1, nrow = n.years * 365)
-  sim.hour.sum <- matrix(0, ncol = n.sim.h, nrow = n.years * 365 * 24)
+sum.simulations <- function(simulations, n.years, n.sim.h, n.sim.day, type){ 
   
   #simulations is a list
-  for (i in 1:length(simulations)){
-    sim.day.sum <- sim.day.sum + simulations[[i]]$sim.day
-    sim.hour.sum <- sim.hour.sum + simulations[[i]]$sim.hour
+  if (!type %in% c('both', 'day', 'hour')){
+    stop("type not valid. Use 'day', 'hour' or 'both")
   }
   
-  return(list(
-    sim.day = sim.day.sum,
-    sim.hour = sim.hour.sum
-  ))
+  if (type == 'day' | type == 'both'){
+    sim.day.sum <- matrix(0, ncol = n.sim.day + 1, nrow = n.years * 365)
+    for (i in 1:length(simulations)){
+      sim.day.sum <- sim.day.sum + simulations[[i]]$sim.day
+    }
+  }
+  
+  if (type == 'hour' | type == 'both'){
+    sim.hour.sum <- matrix(0, ncol = n.sim.h, nrow = n.years * 365 * 24)
+    for (i in 1:length(simulations)){
+      sim.hour.sum <- sim.hour.sum + simulations[[i]]$sim.hour
+    }
+  }
+  
+  if (type == 'both'){
+    sim.list <- list(
+      sim.day = sim.day.sum,
+      sim.hour = sim.day.hour
+    )
+  }else if (type == 'day'){
+    sim.list <- list(
+      sim.day = sim.day.sum
+    )
+  }else if (type == 'hour'){
+    sim.list <- list(
+      sim.hour = sim.day.hour
+    )
+  }
+  
+  return(sim.list)
 }
 
 full.sim.sum <- sum.simulations(list(full.simulations$full.sim.2014.2015.MHQ.thresh, 
@@ -4596,7 +4678,9 @@ full.sim.sum <- sum.simulations(list(full.simulations$full.sim.2014.2015.MHQ.thr
                           n.years = 2, 
                           n.sim.h = 20, 
                           n.sim.day = 1)
-
+full.sim.10.years <- sum.simulations(list(
+  sim.10.years$A126
+))
 
 rain.streaks.df(data= NULL, 'A126', c(2014, 2015), full.sim.sum, 2, 3)
 
