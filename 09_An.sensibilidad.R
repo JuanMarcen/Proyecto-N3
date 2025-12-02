@@ -5244,6 +5244,7 @@ sim.10.years <- list(
   A126.A287 = sim.day.A126.A287.2013.2022
 )
 qsave(sim.10.years, 'sim.10.years.qs')
+sim.10.years <- qread('sim.10.years.qs')
 
 #rainy spells based on perc
 library(tidyr)
@@ -5458,12 +5459,136 @@ qsave(big.events.1, 'big.events.1.qs')
 big.events.1 <- qread('big.events.1.qs')
 
 #grpah of 10 simulations with highest hourly peak
-basura <- big.events.1$big.events.1.A126$event.2[, 1]
-basura2 <- big.events.1$big.events.1.A287$event.2[, 1]
-sum(basura)
-sum(basura2)
-sum(basura2) + sum(basura)
+library(tidyverse)
+library(ggplot2)
+peak.df <- function(events.list.1, events.list.2, event.no, 
+                    station.1, station.2, n.peaks, plot = TRUE){
+  event <- paste0('event.', event.no)
+  big1 <- events.list.1[[event]]
+  big2 <- events.list.2[[event]]
+  dates <- unique(big1$date)
+  big1 <- big1 %>% select(-date)
+  big2 <- big2 %>% select(-date)
+  
+  rain <- sum(big2[, 1]) + sum(big1[, 1])
+  
+  aux <- rbind(big1, big2)
+  peaks <- apply(aux, 2, max)
+  
+  peaks <- sort(peaks, decreasing =  T)[1:n.peaks]
+  names <- names(peaks)
+  
+  big1 <- big1[, names]
+  big2 <- big2[, names]
+  
+  title <- paste0('Simulation event ', event.no, ' ', paste(dates, collapse = '--'),
+                  ': Total rain ', round(rain, 3))
+  
+  names(big1) <- paste0('peak', 1:n.peaks)
+  names(big2) <- paste0('peak', 1:n.peaks)
+  
+  
+  # Convertir ambos dataframes a largo
+  if (plot == TRUE){
+    df1 <- big1 %>%
+      mutate(h = row_number()) %>%
+      pivot_longer(-h, names_to = "serie", values_to = "valor") %>%
+      mutate(origen = station.1) %>%
+      mutate(serie = factor(serie,levels = paste0("peak", 1:n.peaks)))
+    
+    df2 <- big2 %>%
+      mutate(h = row_number()) %>%
+      pivot_longer(-h, names_to = "serie", values_to = "valor") %>%
+      mutate(origen = station.2) %>%
+      mutate(serie = factor(serie, levels = paste0("peak", 1:n.peaks)))
+    
+    # Juntarlos
+    df <- bind_rows(df1, df2)
+    g <- ggplot(df, aes(x = h, y = valor, color = serie, shape = origen)) +
+      geom_point(size = 2) +
+      geom_line() +
+      geom_vline(xintercept = 24, color = "blue", linewidth = 0.8) +
+      labs(
+        x = "h",
+        y = "mm/h",
+        title = title,
+        color = "Simulation",
+        shape = "Origin"
+      ) +
+      theme_minimal(base_size = 14) +
+      theme(
+        plot.title = element_text(face = "bold"),
+        legend.position = "right"
+      )
+    print(g)
+  }
+ 
+  #dataframe to return
+  names(big1) <- paste0(names(big1), '.', station.1)
+  names(big2) <- paste0(names(big2), '.', station.2)
+  df <- cbind(big1, big2)
+  df <- df %>%
+    mutate(t = 0 + 3600 * 0:47) %>%
+    select(t, everything())
+  
+  return(df)
+}
 
+event.1.10.peaks <- list(
+                          event.1.10.peaks = peak.df(events.list.1 = big.events.1$big.events.1.A126,
+                                            events.list.2 = big.events.1$big.events.1.A287,
+                                            event.no = 1,
+                                            station.1 = 'A126',
+                                            station.2 = 'A287',
+                                            n.peaks = 10)
+                        )
 
-plot(big.events.1$big.events.1.A126$event.2[, 1], type = 'b', cex = 0.5)
-plot(big.events.1$big.events.1.A287$event.2[, 1], type = 'b', cex = 0.5, col = 'red')
+data.to.zip <- function(streak.list, folder, stations, sep = '\t'){
+  
+  n.stations <- length(streak.list)
+  event.names <- names(streak.list[[1]])
+  txt.files <- c()  # para guardar luego en el zip
+  for (event in event.names) {
+    
+    # ---- 1) Obtener los dataframes de cada estación ----
+    dfs <- lapply(streak.list, function(stn) stn[[event]])
+    
+    # ---- 2) Mantener solo una columna date ----
+    # La columna date debe existir en ambos
+    date.col <- 0 + 3600*0:47
+    
+    # Eliminar date del resto
+    dfs2 <- lapply(dfs, function(x) x[, !names(x) %in% "date", drop = FALSE])
+    
+    # ---- 3) Renombrar columnas ----
+    for (i in seq_len(n.stations)) {
+      names(dfs2[[i]]) <- paste0(stations[i], ".", seq_len(ncol(dfs2[[i]])))
+    }
+    
+    # ---- 4) Unir todo ----
+    names(dfs2) <- NULL
+    final.df <- cbind(date = date.col, do.call(cbind, dfs2))
+    
+    # ---- 5) Guardar .txt ----
+    file.path.out <- file.path(folder, paste0(event, ".txt"))
+    write.table(final.df, file = file.path.out, sep = sep, row.names = FALSE)
+    
+    txt.files <- c(txt.files, file.path.out)
+  }
+  
+  # ---- 6) Comprimir en .zip ----
+  zipfile <- file.path(folder, "eventos.zip")
+  zip(zipfile, txt.files, flags = "-j")  # -j para no meter carpetas
+  
+  # 8) Eliminar los txt
+  unlink(txt.files)
+  
+  return(zipfile)
+  
+}
+
+data.to.zip(big.events.1, 'datos_nacho/ev.100años', c('A126', 'A287'))
+
+streak.data.to.txt(event.1.10.peaks, 
+                   folder = 'datos_nacho/ev.100años', 
+                   stations_ref = 'A126_A287')
