@@ -5372,8 +5372,8 @@ rainy.spell.48.h <- rain.streaks.df.2('A126.A287', 2013:2022, sim.10.years, 2, 0
 summary(unlist(rainy.spell.48.h[, 2:ncol(rainy.spell.48.h)]))
 
 
-A126.big.events.1 <- sim.day.streaks(2013:2022, sim.day.A126.2013.2022, rainy.spell.48.h)
-A287.big.events.1 <- sim.day.streaks(2013:2022, sim.day.A287.2013.2022, rainy.spell.48.h)
+A126.big.events.1 <- sim.day.streaks(2013:2022, sim.10.years$A126, rainy.spell.48.h)
+A287.big.events.1 <- sim.day.streaks(2013:2022, sim.10.years$A287, rainy.spell.48.h)
 
 
 #now we only compute different rainy simulations
@@ -5543,6 +5543,20 @@ event.1.10.peaks <- list(
                                             n.peaks = 10)
                         )
 
+# maximo 6 horas acumulado
+max_6h_accum <- function(x, k = 6) {
+  # suma móvil alineada a la izquierda
+  sums <- zoo::rollapply(
+    x,
+    width = k,
+    FUN = sum,
+    align = "left",
+    fill = NA
+  )
+  
+  max(sums, na.rm = TRUE)
+}
+
 data.to.zip <- function(streak.list, folder, stations, sep = '\t'){
   
   n.stations <- length(streak.list)
@@ -5577,7 +5591,7 @@ data.to.zip <- function(streak.list, folder, stations, sep = '\t'){
   }
   
   # ---- 6) Comprimir en .zip ----
-  zipfile <- file.path(folder, "eventos.zip")
+  zipfile <- file.path(folder, "eventos.max.6.h.zip")
   zip(zipfile, txt.files, flags = "-j")  # -j para no meter carpetas
   
   # 8) Eliminar los txt
@@ -5587,8 +5601,101 @@ data.to.zip <- function(streak.list, folder, stations, sep = '\t'){
   
 }
 
-data.to.zip(big.events.1, 'datos_nacho/ev.100años', c('A126', 'A287'))
+
+data.to.zip <- function(streak.list, folder, stations,
+                        sep = '\t',
+                        rename.by.max6h = FALSE) {
+  
+  n.stations <- length(streak.list)
+  event.names <- names(streak.list[[1]])
+  txt.files <- c()
+  
+  for (event in event.names) {
+    
+    # ---- 1) Obtener los dataframes de cada estación ----
+    dfs <- lapply(streak.list, function(stn) stn[[event]])
+    
+    # ---- 2) Columna date ----
+    date.col <- 0 + 3600 * 0:47
+    
+    # Eliminar date del resto
+    dfs2 <- lapply(dfs, function(x) x[, !names(x) %in% "date", drop = FALSE])
+    
+    # ---- 3) Renombrar columnas ----
+    for (i in seq_len(n.stations)) {
+      
+      if (rename.by.max6h) {
+        
+        new.names <- sapply(seq_len(ncol(dfs2[[i]])), function(j) {
+          
+          max6h <- max_6h_accum(dfs2[[i]][, j])
+          
+          paste0(
+            round(max6h, 3),
+            ".",
+            stations[i],
+            ".",
+            j
+          )
+        })
+        
+        names(dfs2[[i]]) <- new.names
+        
+      } else {
+        # comportamiento antiguo
+        names(dfs2[[i]]) <- paste0(stations[i], ".", seq_len(ncol(dfs2[[i]])))
+      }
+    }
+    
+    # ---- 4) Unir todo ----
+    names(dfs2) <- NULL
+    final.df <- cbind(date = date.col, do.call(cbind, dfs2))
+    
+    # ---- 4.1) Ordenar columnas alfanuméricamente (excepto date) ----
+    # col.names <- names(final.df)
+    # 
+    # # columnas de datos (excluimos date)
+    # data.cols <- col.names[-1]
+    # 
+    # # orden alfanumérico
+    # ord <- order(data.cols, decreasing = TRUE)
+    # 
+    # # reordenar
+    # final.df <- final.df[, c(1, ord + 1)]
+    
+    # ---- 5) Total de lluvia (station 1 + station 2) ----
+    total.rain <- sum(dfs2[[1]][, 1]) + sum(dfs2[[2]][, 1])
+    total.rain <- round(total.rain, 3)
+    
+    # ---- 6) Guardar .txt ----
+    file.path.out <- file.path(
+      folder,
+      paste0(event, ".", format(total.rain, nsmall = 3), ".txt")
+    )
+    write.table(final.df, file = file.path.out, sep = sep, row.names = FALSE)
+    
+    txt.files <- c(txt.files, file.path.out)
+  }
+  
+  # ---- 6) Comprimir en .zip ----
+  zipfile <- file.path(folder, "eventos.max.6.h.zip")
+  zip(zipfile, txt.files, flags = "-j")
+  
+  # ---- 7) Eliminar los txt ----
+  unlink(txt.files)
+  
+  return(zipfile)
+}
+
+data.to.zip(big.events.1, 'datos_nacho/ev.100años', c('A126', 'A287'), 
+            rename.by.max6h = TRUE)
 
 streak.data.to.txt(event.1.10.peaks, 
                    folder = 'datos_nacho/ev.100años', 
                    stations_ref = 'A126_A287')
+
+# prueba para ver que me lo hace bien
+aux <- big.events.1$big.events.1.A126$event.1
+library(zoo)
+basura <- rollapply(aux[, 2], width = 6, FUN = sum, align = 'left', fill = NA)
+max(basura, na.rm = T)
